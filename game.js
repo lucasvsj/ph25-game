@@ -189,6 +189,9 @@ let worldHeight = 1000000;
 let speed = 220;
 let jump = 300;
 let recoil = 240;
+let enemiesGroup;
+let debugHitboxes = false;
+let debugGraphics;
 
 
 function create() {
@@ -219,13 +222,20 @@ function create() {
   platformsGroup = this.physics.add.staticGroup();
   bulletsGroup = this.physics.add.group();
   hazardsGroup = this.physics.add.staticGroup();
+  enemiesGroup = this.physics.add.group();
 
   // Player: white rectangle with dynamic body
   player = this.add.rectangle(400, 50, 18, 24, 0xffffff);
   this.physics.add.existing(player);
+  if (player.body && player.body.setSize) player.body.setSize(player.displayWidth, player.displayHeight, true);
   player.body.setCollideWorldBounds(true);
   player.body.setMaxVelocity(300, 700);
   player.body.setDragX(800);
+  player.body.enable = true;
+  player.body.checkCollision.up = true;
+  player.body.checkCollision.down = true;
+  player.body.checkCollision.left = true;
+  player.body.checkCollision.right = true;
 
   // Seed initial platforms
   seedPlatforms(this, 150, this.cameras.main.scrollY + 800);
@@ -234,11 +244,31 @@ function create() {
   this.physics.add.collider(bulletsGroup, platformsGroup, (b /* bullet */, _p /* platform */) => {
     if (b && b.destroy) b.destroy();
   });
+  // Bullets kill enemies
+  this.physics.add.overlap(bulletsGroup, enemiesGroup, (b, e) => onBulletHitsEnemy(this, b, e));
+
+  // Enemies collide with platforms (stay on top)
+  this.physics.add.collider(enemiesGroup, platformsGroup);
+  
+  // Enemies collide with each other (reverse direction on same platform)
+  this.physics.add.collider(enemiesGroup, enemiesGroup, (a, b) => {
+    if (a.platformRef && b.platformRef && a.platformRef === b.platformRef) {
+      a.dir = -a.dir;
+      b.dir = -b.dir;
+      a.body.setVelocityX(a.dir * a.speed);
+      b.body.setVelocityX(b.dir * b.speed);
+    }
+  });
 
   // Side hazards (prevent safe wall-riding)
   setupHazards(this);
   this.physics.add.overlap(player, hazardsGroup, (_pl, _hz) => {
     if (hazardOn) endGame(this);
+  });
+  // Player dies on touching enemies
+  this.physics.add.overlap(player, enemiesGroup, (p, e) => { 
+    console.log('Player touched enemy!', p, e); // DEBUG
+    if (!gameOver) endGame(this); 
   });
 
   // Camera follow (soft)
@@ -280,6 +310,19 @@ function create() {
     if (key === 'P1L') keysState.left = false;
     if (key === 'P1R') keysState.right = false;
   });
+
+  // Toggle hurtbox/hitbox debug with P
+  this.input.keyboard.on('keydown-P', () => {
+    debugHitboxes = !debugHitboxes;
+    if (!debugHitboxes && debugGraphics) debugGraphics.clear();
+  });
+  if (debugGraphics && !debugGraphics.scene) {
+    // stale reference from previous scene, drop it
+    debugGraphics = null;
+  }
+  if (debugGraphics) debugGraphics.destroy();
+  debugGraphics = this.add.graphics();
+  debugGraphics.setDepth(4500);
 }
 
 
@@ -305,7 +348,7 @@ function update(_time, _delta) {
     // Score by max depth
     if (player.y > maxDepth) {
       maxDepth = player.y;
-      if (scoreText) scoreText.setText('Score: ' + Math.floor(maxDepth));
+      if (scoreText) scoreText.setText('Score: ' + (Math.floor(maxDepth) + score));
     }
 
   }
@@ -320,7 +363,7 @@ function update(_time, _delta) {
     if (p.y < cam.scrollY - 60) {
       // move platform below
       const maxY = platforms.reduce((m, o) => Math.max(m, o.y), cam.scrollY + 300);
-      positionPlatform(p, maxY + Phaser.Math.Between(70, 120));
+      positionPlatform(this, p, maxY + Phaser.Math.Between(70, 120));
       if (p.body && p.body.updateFromGameObject) p.body.updateFromGameObject();
     }
   }
@@ -350,6 +393,12 @@ function update(_time, _delta) {
     hazardInterval = Phaser.Math.Between(900, 1800);
     setHazardVisual(this);
   }
+
+  // Enemies movement and interactions
+  updateEnemies(this, _delta || 16);
+
+  // Draw hurtboxes/hitboxes when enabled
+  if (debugHitboxes) drawHitboxes(this);
 }
 
 
@@ -395,7 +444,7 @@ function endGame(scene) {
   });
 
   // Score display
-  const finalScoreText = scene.add.text(cx, cy + 100, 'TOTAL SCORE: ' + Math.floor(maxDepth), {
+  const finalScoreText = scene.add.text(cx, cy + 100, 'TOTAL SCORE: ' + (Math.floor(maxDepth) + score), {
     fontSize: '36px',
     fontFamily: 'Arial, sans-serif',
     color: '#00ffff',
@@ -466,6 +515,7 @@ function seedPlatforms(scene, fromY, toY) {
   while (y < toY) {
     const p = createPlatform(scene, y);
     platforms.push(p);
+    maybeSpawnEnemies(scene, p);
     y += Phaser.Math.Between(70, 120);
   }
 }
@@ -482,12 +532,13 @@ function createPlatform(scene, y) {
     rect.body.checkCollision.left = false;
     rect.body.checkCollision.right = false;
   }
+  rect.enemies = [];
   if (platformsGroup) platformsGroup.add(rect);
   if (rect.body && rect.body.updateFromGameObject) rect.body.updateFromGameObject();
   return rect;
 }
 
-function positionPlatform(rect, y) {
+function positionPlatform(scene, rect, y) {
   const width = Phaser.Math.Between(70, 180);
   const x = Phaser.Math.Between(40, 760 - width);
   rect.setSize(width, 12);
@@ -496,13 +547,27 @@ function positionPlatform(rect, y) {
   rect.x = x + width / 2;
   rect.y = y;
   if (rect.body && rect.body.updateFromGameObject) rect.body.updateFromGameObject();
+  // Reset enemies on this platform and respawn
+  if (rect.enemies && rect.enemies.length) {
+    rect.enemies.forEach(e => e.destroy());
+    rect.enemies = [];
+  } else if (!rect.enemies) {
+    rect.enemies = [];
+  }
+  maybeSpawnEnemies(scene, rect);
 }
 
 function fireBullet(scene) {
-  const b = scene.add.rectangle(player.x, player.y + 16, 4, 8, 0xff4444);
+  const b = scene.add.rectangle(player.x, player.y + 16, 6, 14, 0xff4444);
   scene.physics.add.existing(b);
-  b.body.setVelocityY(550);
+  if (b.body && b.body.setSize) b.body.setSize(6, 14, true);
   b.body.setAllowGravity(false);
+  b.body.enable = true;
+  b.body.checkCollision.up = true;
+  b.body.checkCollision.down = true;
+  b.body.checkCollision.left = true;
+  b.body.checkCollision.right = true;
+  b.body.setVelocityY(550);
   if (bulletsGroup) bulletsGroup.add(b);
   bullets.push(b);
   ammo -= 1;
@@ -510,6 +575,138 @@ function fireBullet(scene) {
   // Recoil upwards
   player.body.setVelocityY(Math.min(player.body.velocity.y - recoil, -recoil));
   playTone(scene, 880, 0.05);
+}
+
+// ===== Enemy helpers =====
+function maybeSpawnEnemies(scene, platform) {
+  if (!enemiesGroup) return;
+  const pw = platform.displayWidth || 100;
+  // Decide count: 0-2, bias to fewer, and ensure max 2
+  let count = 0;
+  if (Phaser.Math.Between(0, 99) < 55) count = 1;
+  if (pw > 120 && Phaser.Math.Between(0, 99) < 35) count = Math.min(2, count + 1);
+  for (let i = 0; i < count && platform.enemies.length < 2; i++) {
+    spawnEnemy(scene, platform);
+  }
+}
+
+function spawnEnemy(scene, platform) {
+  const pw = platform.displayWidth;
+  const minX = platform.x - pw / 2 + 16;
+  const maxX = platform.x + pw / 2 - 16;
+  const ex = Phaser.Math.Between(Math.floor(minX), Math.floor(maxX));
+  const ph = platform.displayHeight || 12;
+  const eh = 14;
+  const ew = 28;
+  const ey = platform.y - ph / 2 - eh / 2; // sit on top of platform visually
+  const enemy = scene.add.rectangle(ex, ey, ew, eh, 0xff2222);
+  scene.physics.add.existing(enemy);
+  
+  // Configure physics body FIRST
+  enemy.body.setSize(ew, eh, true);
+  enemy.body.setAllowGravity(false);
+  enemy.body.enable = true;
+  enemy.body.checkCollision.up = true;
+  enemy.body.checkCollision.down = true;
+  enemy.body.checkCollision.left = true;
+  enemy.body.checkCollision.right = true;
+  
+  // Store movement data with proper boundaries
+  enemy.minX = platform.x - pw / 2 + 14; // Left boundary with margin
+  enemy.maxX = platform.x + pw / 2 - 14; // Right boundary with margin
+  enemy.dir = Phaser.Math.Between(0, 1) ? 1 : -1;
+  enemy.speed = Phaser.Math.Between(40, 80);
+  enemy.platformRef = platform;
+  
+  // Start movement with velocity
+  enemy.body.setVelocityX(enemy.dir * enemy.speed);
+  enemy.body.setVelocityY(0);
+  
+  enemiesGroup.add(enemy);
+  platform.enemies.push(enemy);
+}
+
+function updateEnemies(scene, deltaMs) {
+  // Move enemies within their platform range - PURE velocity based, NO manual position changes
+  enemiesGroup.getChildren().forEach(e => {
+    if (!e.active || !e.body) return;
+    
+    // Keep Y velocity at 0 (enemies walk on platforms, don't fall)
+    if (e.body.velocity.y !== 0) {
+      e.body.setVelocityY(0);
+    }
+    
+    // Ensure enemy is always moving (restore velocity if lost due to collisions)
+    if (Math.abs(e.body.velocity.x) < 5) {
+      e.body.setVelocityX(e.dir * e.speed);
+    }
+    
+    // Boundary checks using center position - ONLY change velocity, NEVER touch position
+    if (e.x <= e.minX && e.body.velocity.x < 0) { 
+      e.dir = 1; 
+      e.body.setVelocityX(e.dir * e.speed);
+    }
+    else if (e.x >= e.maxX && e.body.velocity.x > 0) { 
+      e.dir = -1; 
+      e.body.setVelocityX(e.dir * e.speed);
+    }
+  });
+  // Clean up destroyed enemies from platform lists
+  platforms.forEach(p => {
+    if (p.enemies) {
+      p.enemies = p.enemies.filter(e => e.active);
+    }
+  });
+}
+
+function onBulletHitsEnemy(scene, bullet, enemy) {
+  console.log('Bullet hit enemy!', bullet, enemy); // DEBUG
+  if (bullet && bullet.destroy) bullet.destroy();
+  if (enemy && enemy.active) {
+    // Remove from platform list
+    const p = enemy.platformRef;
+    if (p && p.enemies) p.enemies = p.enemies.filter(x => x !== enemy);
+    // Visual feedback: floating +50
+    const t = scene.add.text(enemy.x, enemy.y - 10, '+50', {
+      fontSize: '16px', fontFamily: 'Arial, sans-serif', color: '#ffdd55', stroke: '#000000', strokeThickness: 2
+    }).setOrigin(0.5);
+    scene.tweens.add({ targets: t, y: t.y - 20, alpha: 0, duration: 500, onComplete: () => t.destroy() });
+    // Sound feedback
+    playTone(scene, 660, 0.08);
+    // Score bonus
+    score += 50;
+    if (scoreText) scoreText.setText('Score: ' + (Math.floor(maxDepth) + score));
+    enemy.destroy();
+  }
+}
+
+// ===== Debug helpers =====
+function drawHitboxes(scene) {
+  if (!debugGraphics) return;
+  debugGraphics.clear();
+  // Player
+  if (player && player.body) {
+    debugGraphics.lineStyle(1, 0x00ff00, 1);
+    debugGraphics.strokeRect(player.body.x, player.body.y, player.body.width, player.body.height);
+  }
+  // Enemies
+  if (enemiesGroup) {
+    enemiesGroup.getChildren().forEach(e => {
+      if (e.body) {
+        debugGraphics.lineStyle(1, 0xffa500, 1);
+        debugGraphics.strokeRect(e.body.x, e.body.y, e.body.width, e.body.height);
+      }
+    });
+  }
+  // Bullets
+  if (bulletsGroup) {
+    bulletsGroup.getChildren().forEach(b => {
+      if (b.body) {
+        debugGraphics.lineStyle(1, 0xffff00, 1);
+        debugGraphics.strokeRect(b.body.x, b.body.y, b.body.width, b.body.height);
+      }
+    });
+  }
 }
 
 // ===== Side hazard helpers =====
