@@ -50,6 +50,10 @@ let currentShootKey = 'e';
 function menuCreate() {
   const s = this;
   s.cameras.main.setBackgroundColor('#000000');
+  
+  // Initialize overlay visibility flags
+  s.instructionsVisible = false;
+  s.controlsVisible = false;
 
   s.add.text(400, 130, 'CHAINFALL', {
     fontSize: '64px', fontFamily: 'Arial, sans-serif', color: '#ffffff', align: 'center'
@@ -73,27 +77,101 @@ function menuCreate() {
 
   s.input.keyboard.on('keydown', (ev) => {
     const key = KEYBOARD_TO_ARCADE[ev.key] || ev.key;
+    if (s.instructionsVisible || s.controlsVisible) { return; }
     if (key === 'P1U') { s.menuIndex = (s.menuIndex + s.menuItems.length - 1) % s.menuItems.length; updateMenuVisuals(s); }
     else if (key === 'P1D') { s.menuIndex = (s.menuIndex + 1) % s.menuItems.length; updateMenuVisuals(s); }
-    else if (key === 'P1A' || key === 'START1') {
+    else if (key === 'P1A') {
       const actions = [() => s.scene.start('game'), () => showInstructions(s), () => showControls(s)];
       actions[s.menuIndex]();
     }
   });
 
-  // Instructions overlay (hidden by default)
+  // Instructions overlay (hidden by default) - visual with images
   s.instructionsGroup = s.add.group();
   const iOv = s.add.rectangle(400, 300, 800, 600, 0x000000, 0.86);
-  const iT = s.add.text(400, 180, 'Instructions', { fontSize: '40px', fontFamily: 'Arial, sans-serif', color: '#ffff00' }).setOrigin(0.5);
-  s.instructionsText = s.add.text(400, 300,
-    'Move: A/D  |  Jump: W\nShoot down: ' + currentShootKey.toUpperCase() + ' (ammo 3, recarga al aterrizar)\nPress START to begin',
-    { fontSize: '20px', fontFamily: 'Arial, sans-serif', color: '#dddddd', align: 'center' }
-  ).setOrigin(0.5);
-  const iBack = s.add.text(400, 420, 'Back', { fontSize: '28px', fontFamily: 'Arial, sans-serif', color: '#00ff00' }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+  const iT = s.add.text(400, 140, 'Instructions', { fontSize: '40px', fontFamily: 'Arial, sans-serif', color: '#ffff00' }).setOrigin(0.5);
+  const iBack = s.add.text(400, 520, 'Back', { fontSize: '28px', fontFamily: 'Arial, sans-serif', color: '#00ff00' }).setOrigin(0.5).setInteractive({ useHandCursor: true });
   iBack.on('pointerdown', () => hideInstructions(s));
-  s.instructionsGroup.addMultiple([iOv, iT, s.instructionsText, iBack]);
+
+  // Graphics helper
+  const g = s.add.graphics();
+  g.lineStyle(2, 0x00ffff, 1);
+
+  // Section: Move / Jump (left)
+  const moveTitle = s.add.text(140, 200, 'MOVE / JUMP', { fontSize: '18px', fontFamily: 'Arial, sans-serif', color: '#ffffff' }).setOrigin(0.5);
+  const keyA = s.add.rectangle(110, 240, 34, 34, 0x111111);
+  const keyD = s.add.rectangle(170, 240, 34, 34, 0x111111);
+  const keyW = s.add.rectangle(140, 190, 34, 34, 0x111111);
+  const txtA = s.add.text(110, 240, 'A', { fontSize: '20px', fontFamily: 'Arial, sans-serif', color: '#00ffff' }).setOrigin(0.5);
+  const txtD = s.add.text(170, 240, 'D', { fontSize: '20px', fontFamily: 'Arial, sans-serif', color: '#00ffff' }).setOrigin(0.5);
+  const txtW = s.add.text(140, 190, 'W', { fontSize: '20px', fontFamily: 'Arial, sans-serif', color: '#00ffff' }).setOrigin(0.5);
+  // Arrows left/right
+  g.fillStyle(0x00ffff, 1);
+  g.fillTriangle(90, 240, 100, 232, 100, 248);
+  g.fillTriangle(190, 240, 180, 232, 180, 248);
+  // Up arrow for jump
+  g.fillTriangle(140, 170, 132, 180, 148, 180);
+
+  // Section: Shooting (center)
+  const centerTitle = s.add.text(400, 200, 'SHOOT DOWN', { fontSize: '18px', fontFamily: 'Arial, sans-serif', color: '#ffffff' }).setOrigin(0.5);
+  const plat = s.add.rectangle(400, 360, 160, 12, 0x00aaff);
+  const pRect = s.add.rectangle(400, 360 - 6 - 12, 18, 24, 0xffffff);
+  const bullet = s.add.rectangle(400, 360 + 26, 6, 14, 0xff4444);
+  // Bullet arrow
+  g.fillStyle(0xff4444, 1);
+  g.fillTriangle(400, 390, 392, 378, 408, 378);
+  const shootTxt = s.add.text(400, 420, 'Press ' + currentShootKey.toUpperCase() + ' to shoot down (in air)', { fontSize: '16px', fontFamily: 'Arial, sans-serif', color: '#dddddd' }).setOrigin(0.5);
+  const landTxt = s.add.text(400, 444, 'Landing reloads to max ammo', { fontSize: '16px', fontFamily: 'Arial, sans-serif', color: '#aaaaaa' }).setOrigin(0.5);
+
+  // Section: Combo (right)
+  const comboTitle = s.add.text(660, 200, 'COMBO', { fontSize: '18px', fontFamily: 'Arial, sans-serif', color: '#ffffff' }).setOrigin(0.5);
+  const comboPlat = s.add.rectangle(660, 360, 160, 12, 0x00aaff);
+  const comboPlayer = s.add.rectangle(660, 360 - 6 - 12, 18, 24, 0xffffff);
+  // Blue bullets (bonus)
+  const bb1 = s.add.rectangle(630, 328, 6, 14, 0x00ffff);
+  const bb2 = s.add.rectangle(650, 315, 6, 14, 0x00ffff);
+  const bb3 = s.add.rectangle(670, 300, 6, 14, 0x00ffff);
+  const comboInfo1 = s.add.text(660, 420, 'Air kills build combo', { fontSize: '16px', fontFamily: 'Arial, sans-serif', color: '#dddddd' }).setOrigin(0.5);
+  const comboInfo2 = s.add.text(660, 444, 'Gain blue bullets; landing resets extras', { fontSize: '16px', fontFamily: 'Arial, sans-serif', color: '#aaaaaa' }).setOrigin(0.5);
+
+  s.instructionsGroup.addMultiple([
+    iOv, iT, iBack,
+    moveTitle, keyA, keyD, keyW, txtA, txtD, txtW,
+    centerTitle, plat, pRect, bullet, shootTxt, landTxt,
+    comboTitle, comboPlat, comboPlayer, bb1, bb2, bb3, comboInfo1, comboInfo2,
+    g
+  ]);
+  // Panel items for keyboard focus
+  s.instrItems = [iBack];
+  s.instrIndex = 0;
+  updateInstrVisuals(s);
   hideInstructions(s);
-  s.input.keyboard.on('keydown', (ev) => { const k = KEYBOARD_TO_ARCADE[ev.key] || ev.key; if (s.instructionsVisible && (k === 'P1B' || ev.key === 'Escape' || k === 'P1A')) hideInstructions(s); });
+
+  // Panel key handling: Instructions
+  s.input.keyboard.on('keydown', (ev) => {
+    if (!s.instructionsVisible) return;
+    if (s.instructionsJustOpened) return; // Prevent immediate close
+    const raw = ev.key;
+    const key = KEYBOARD_TO_ARCADE[raw] || raw;
+    
+    // Close on Escape or P1B
+    if (raw === 'Escape' || key === 'P1B') {
+      hideInstructions(s);
+      return;
+    }
+    
+    // Navigation keys
+    if (key === 'P1U' || key === 'P1D' || key === 'P1L' || key === 'P1R') {
+      s.instrIndex = 0; // Only one item, keep highlighted
+      updateInstrVisuals(s);
+      return;
+    }
+    
+    // Confirm with P1A
+    if (key === 'P1A') {
+      hideInstructions(s);
+    }
+  });
 
   // Controls overlay (hidden by default)
   s.controlsGroup = s.add.group();
@@ -106,16 +184,42 @@ function menuCreate() {
   const cBack = s.add.text(400, 420, 'Back', { fontSize: '28px', fontFamily: 'Arial, sans-serif', color: '#00ff00' }).setOrigin(0.5).setInteractive({ useHandCursor: true });
   cBack.on('pointerdown', () => hideControls(s));
   s.controlsGroup.addMultiple([cOv, cT, s.controlsInfo, cBack]);
+  // Panel items for keyboard focus
+  s.controlsItems = [cBack];
+  s.controlsIndex = 0;
+  updateControlsVisuals(s);
   hideControls(s);
+
+  // Panel key handling: Controls (unified handler)
   s.input.keyboard.on('keydown', (ev) => {
     if (!s.controlsVisible) return;
+    if (s.controlsJustOpened) return; // Prevent immediate close
     const raw = ev.key;
-    const k = KEYBOARD_TO_ARCADE[raw] || raw;
-    if (raw === 'Escape' || k === 'P1B') { hideControls(s); return; }
+    const key = KEYBOARD_TO_ARCADE[raw] || raw;
+    
+    // Close on Escape or P1B
+    if (raw === 'Escape' || key === 'P1B') { 
+      hideControls(s); 
+      return; 
+    }
+    
+    // Navigation keys
+    if (key === 'P1U' || key === 'P1D' || key === 'P1L' || key === 'P1R') {
+      s.controlsIndex = 0; // Only one item, keep highlighted
+      updateControlsVisuals(s);
+      return;
+    }
+    
+    // Confirm with P1A
+    if (key === 'P1A') {
+      hideControls(s);
+      return;
+    }
+    
+    // Rebind shoot key with any single letter
     if (raw && raw.length === 1) {
       rebindShootKey(raw.toLowerCase());
       if (s.controlsInfo) s.controlsInfo.setText('Press any key to set Shoot\nCurrent: ' + currentShootKey.toUpperCase());
-      if (s.instructionsText) s.instructionsText.setText('Move: A/D  |  Jump: W\nShoot down: ' + currentShootKey.toUpperCase() + ' (ammo 3, recarga al aterrizar)\nPress START to begin');
       hideControls(s);
     }
   });
@@ -133,10 +237,48 @@ function updateMenuVisuals(s) {
   });
 }
 
-function showInstructions(s) { s.instructionsVisible = true; s.instructionsGroup.setVisible(true); }
-function hideInstructions(s) { s.instructionsVisible = false; s.instructionsGroup.setVisible(false); }
-function showControls(s) { s.controlsVisible = true; s.controlsGroup.setVisible(true); }
-function hideControls(s) { s.controlsVisible = false; s.controlsGroup.setVisible(false); }
+function updateInstrVisuals(s) {
+  if (!s.instrItems) return;
+  s.instrItems.forEach((t, i) => {
+    const sel = i === s.instrIndex;
+    t.setScale(sel ? 1.12 : 1);
+    t.setColor(sel ? '#ffffff' : '#00ff00');
+  });
+}
+
+function updateControlsVisuals(s) {
+  if (!s.controlsItems) return;
+  s.controlsItems.forEach((t, i) => {
+    const sel = i === s.controlsIndex;
+    t.setScale(sel ? 1.12 : 1);
+    t.setColor(sel ? '#ffffff' : '#00ff00');
+  });
+}
+
+function showInstructions(s) { 
+  s.instructionsVisible = true; 
+  s.instructionsGroup.setVisible(true); 
+  s.instrIndex = 0; 
+  updateInstrVisuals(s);
+  s.instructionsJustOpened = true;
+  setTimeout(() => { s.instructionsJustOpened = false; }, 50);
+}
+function hideInstructions(s) { 
+  s.instructionsVisible = false; 
+  s.instructionsGroup.setVisible(false); 
+}
+function showControls(s) { 
+  s.controlsVisible = true; 
+  s.controlsGroup.setVisible(true); 
+  s.controlsIndex = 0; 
+  updateControlsVisuals(s);
+  s.controlsJustOpened = true;
+  setTimeout(() => { s.controlsJustOpened = false; }, 50);
+}
+function hideControls(s) { 
+  s.controlsVisible = false; 
+  s.controlsGroup.setVisible(false); 
+}
 
 function rebindShootKey(newKey) {
   const k = (newKey || '').toLowerCase();
