@@ -677,6 +677,9 @@ function onBulletHitsEnemy(scene, bullet, enemy) {
     // Score bonus
     score += 50;
     if (scoreText) scoreText.setText('Score: ' + score);
+    // Gain 1 ammo on kill (clamped)
+    ammo = Math.min(maxAmmo, ammo + 1);
+    if (scene.ammoText) scene.ammoText.setText('Ammo: ' + ammo);
     enemy.destroy();
   }
 }
