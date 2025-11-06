@@ -1,4 +1,4 @@
-// Platanus Hack 25: Bootfall
+// Platanus Hack 25: CHAINFALL
 
 // =============================================================================
 // ARCADE BUTTON MAPPING - COMPLETE TEMPLATE
@@ -12,7 +12,7 @@
 // To use in your game:
 //   if (key === 'P1U') { ... }  // Works on both arcade and local (via keyboard)
 //
-// CURRENT GAME USAGE (Bootfall):
+// CURRENT GAME USAGE (CHAINFALL):
 //   - P1L/P1R (Joystick) → Move left/right
 //   - P1U → Jump (grounded)
 //   - P1A → Shoot down (in air)
@@ -20,7 +20,7 @@
 // =============================================================================
 
 const ARCADE_CONTROLS = {
-  // ===== PLAYER 1 CONTROLS (Bootfall) =====
+  // ===== PLAYER 1 CONTROLS (CHAINFALL) =====
   'P1U': ['w'],
   'P1D': ['s'],
   'P1L': ['a'],
@@ -51,7 +51,7 @@ function menuCreate() {
   const s = this;
   s.cameras.main.setBackgroundColor('#000000');
 
-  s.add.text(400, 130, 'BOOTFALL', {
+  s.add.text(400, 130, 'CHAINFALL', {
     fontSize: '64px', fontFamily: 'Arial, sans-serif', color: '#ffffff', align: 'center'
   }).setOrigin(0.5);
 
@@ -200,7 +200,7 @@ let comboText;
 
 function create() {
   const scene = this;
-  // Bootfall scene init tone
+  // CHAINFALL scene init tone
   playTone(this, 440, 0.1);
   
   // MUSIC
@@ -318,6 +318,23 @@ function create() {
     fontFamily: 'Arial, sans-serif',
     color: '#00ffff'
   }).setScrollFactor(0);
+
+  // Title splash
+  const titleSplash = this.add.text(400, 200, 'CHAINFALL', {
+    fontSize: '64px',
+    fontFamily: 'Arial, sans-serif',
+    color: '#ffffff',
+    stroke: '#000000',
+    strokeThickness: 6
+  }).setOrigin(0.5).setScrollFactor(0);
+  this.tweens.add({
+    targets: titleSplash,
+    alpha: { from: 1, to: 0 },
+    duration: 1200,
+    delay: 300,
+    ease: 'Quad.easeOut',
+    onComplete: () => titleSplash.destroy()
+  });
 
   // Input handlers (use arcade mapping)
   this.input.keyboard.on('keydown', (event) => {
@@ -454,6 +471,17 @@ function endGame(scene) {
   overlay.fillRect(0, 0, 800, 600);
   overlay.setDepth(9999);
   overlay.setScrollFactor(0);
+
+  // Game title on overlay
+  const titleText = scene.add.text(400, 70, 'CHAINFALL', {
+    fontSize: '36px',
+    fontFamily: 'Arial, sans-serif',
+    color: '#ffffff',
+    stroke: '#000000',
+    strokeThickness: 4
+  }).setOrigin(0.5);
+  titleText.setDepth(10000);
+  titleText.setScrollFactor(0);
 
   const cam = scene.cameras.main;
   const cx = player ? (player.x - cam.scrollX) : 400;

@@ -1,4 +1,4 @@
 {
-  "game_name": "Bootfall",
-  "description": "Arcade descendente estilo Downwell: cae, dispara hacia abajo y aterriza en plataformas. Graficos procedurales en Phaser 3."
+  "game_name": "Chainfall",
+  "description": "Acción arcade de caída y combos: desciende, encadena kills en el aire para acumular balas azules y multiplica tu puntaje. Hecho con Phaser 3."
 }
