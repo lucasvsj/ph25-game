@@ -267,7 +267,6 @@ function create() {
   });
   // Player dies on touching enemies
   this.physics.add.overlap(player, enemiesGroup, (p, e) => { 
-    console.log('Player touched enemy!', p, e); // DEBUG
     if (!gameOver) endGame(this); 
   });
 
@@ -660,7 +659,6 @@ function updateEnemies(scene, deltaMs) {
 }
 
 function onBulletHitsEnemy(scene, bullet, enemy) {
-  console.log('Bullet hit enemy!', bullet, enemy); // DEBUG
   if (bullet && bullet.destroy) bullet.destroy();
   if (enemy && enemy.active) {
     // Remove from platform list
