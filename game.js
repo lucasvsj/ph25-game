@@ -234,8 +234,26 @@ function create() {
   hazardsGroup = this.physics.add.staticGroup();
   enemiesGroup = this.physics.add.group();
 
-  // Player: white rectangle with dynamic body
-  player = this.add.rectangle(400, 50, 18, 24, 0xffffff);
+  // Safe starting platform (left side, yellow, no enemy spawns)
+  const startWidth = 160;
+  const startX = 40 + startWidth / 2;
+  const startY = 140;
+  const startPlat = this.add.rectangle(startX, startY, startWidth, 12, 0xffff00);
+  this.physics.add.existing(startPlat, true);
+  if (startPlat.body) {
+    startPlat.body.checkCollision.up = true;
+    startPlat.body.checkCollision.down = true;
+    startPlat.body.checkCollision.left = true;
+    startPlat.body.checkCollision.right = true;
+    if (startPlat.body.updateFromGameObject) startPlat.body.updateFromGameObject();
+  }
+  startPlat.enemies = [];
+  startPlat.noEnemies = true;
+  if (platformsGroup) platformsGroup.add(startPlat);
+  platforms.push(startPlat);
+
+  // Player: white rectangle with dynamic body (start on safe platform)
+  player = this.add.rectangle(startX, startY - 6 - 12, 18, 24, 0xffffff);
   this.physics.add.existing(player);
   if (player.body && player.body.setSize) player.body.setSize(player.displayWidth, player.displayHeight, true);
   player.body.setCollideWorldBounds(true);
@@ -247,8 +265,8 @@ function create() {
   player.body.checkCollision.left = true;
   player.body.checkCollision.right = true;
 
-  // Seed initial platforms
-  seedPlatforms(this, 150, this.cameras.main.scrollY + 800);
+  // Seed initial platforms (start below the safe platform)
+  seedPlatforms(this, 220, this.cameras.main.scrollY + 800);
   // Colliders (single)
   this.physics.add.collider(player, platformsGroup);
   this.physics.add.collider(bulletsGroup, platformsGroup, (b /* bullet */, _p /* platform */) => {
@@ -567,6 +585,8 @@ function positionPlatform(scene, rect, y) {
   rect.displayHeight = 12;
   rect.x = x + width / 2;
   rect.y = y;
+  rect.setFillStyle(0x00aaff);
+  rect.noEnemies = false;
   if (rect.body) {
     // ensure collisions remain solid on both top and bottom faces
     rect.body.checkCollision.up = true;
@@ -608,6 +628,7 @@ function fireBullet(scene) {
 // ===== Enemy helpers =====
 function maybeSpawnEnemies(scene, platform) {
   if (!enemiesGroup) return;
+  if (platform && platform.noEnemies) return;
   const pw = platform.displayWidth || 100;
   // Decide count: 0-2, bias to fewer, and ensure max 2
   let count = 0;
