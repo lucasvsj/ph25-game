@@ -192,6 +192,10 @@ let recoil = 240;
 let enemiesGroup;
 let debugHitboxes = false;
 let debugGraphics;
+// Combo system
+let comboCount = 0;
+let comboMultiplier = 1;
+let comboText;
 
 
 function create() {
@@ -211,6 +215,9 @@ function create() {
   keysState.left = keysState.right = false;
   hazardOn = true;
   hazardTimer = 0;
+  // Reset combo
+  comboCount = 0;
+  comboMultiplier = 1;
   // Clear runtime arrays
   platforms = [];
   bullets = [];
@@ -288,6 +295,11 @@ function create() {
     fontFamily: 'Arial, sans-serif',
     color: '#ffff00'
   }).setScrollFactor(0);
+  comboText = this.add.text(16, 68, '', {
+    fontSize: '20px',
+    fontFamily: 'Arial, sans-serif',
+    color: '#00ffff'
+  }).setScrollFactor(0);
 
   // Input handlers (use arcade mapping)
   this.input.keyboard.on('keydown', (event) => {
@@ -338,11 +350,25 @@ function update(_time, _delta) {
     if (keysState.right) vx += speed;
     player.body.setVelocityX(vx);
 
-    // Land detection to reset ammo
+    // Land detection to reset ammo and combo
     const onGround = player.body.blocked.down;
     if (onGround && !wasOnGround) {
+      // Reset combo if had blue bullets
+      if (ammo > maxAmmo || comboCount > 0) {
+        comboCount = 0;
+        comboMultiplier = 1;
+        if (comboText) {
+          comboText.setText('');
+          comboText.setScale(1); // Reset scale
+        }
+      }
+      // ALWAYS reset ammo to maxAmmo when landing
       ammo = maxAmmo;
-      if (this.ammoText) this.ammoText.setText('Ammo: ' + ammo);
+      if (this.ammoText) {
+        this.ammoText.setText('Ammo: ' + ammo);
+        // Reset to yellow color (normal ammo)
+        this.ammoText.setColor('#ffff00');
+      }
       playTone(this, 440, 0.05);
     }
     wasOnGround = onGround;
@@ -585,7 +611,7 @@ function maybeSpawnEnemies(scene, platform) {
   const pw = platform.displayWidth || 100;
   // Decide count: 0-2, bias to fewer, and ensure max 2
   let count = 0;
-  if (Phaser.Math.Between(0, 99) < 45) count = 1;
+  if (Phaser.Math.Between(0, 99) < 75) count = 1;
   if (pw > 140 && Phaser.Math.Between(0, 99) < 12) count = Math.min(2, count + 1);
   for (let i = 0; i < count && platform.enemies.length < 2; i++) {
     spawnEnemy(scene, platform);
@@ -667,19 +693,146 @@ function onBulletHitsEnemy(scene, bullet, enemy) {
     // Remove from platform list
     const p = enemy.platformRef;
     if (p && p.enemies) p.enemies = p.enemies.filter(x => x !== enemy);
-    // Visual feedback: floating +50
-    const t = scene.add.text(enemy.x, enemy.y - 10, '+50', {
-      fontSize: '16px', fontFamily: 'Arial, sans-serif', color: '#ffdd55', stroke: '#000000', strokeThickness: 2
-    }).setOrigin(0.5);
-    scene.tweens.add({ targets: t, y: t.y - 20, alpha: 0, duration: 500, onComplete: () => t.destroy() });
-    // Sound feedback
-    playTone(scene, 660, 0.08);
-    // Score bonus
-    score += 50;
+    
+    // Check if airborne kill (combo system)
+    const isAirborne = player && player.body && !player.body.blocked.down;
+    
+    let earnedScore = 50;
+    
+    if (isAirborne) {
+      // Airborne kill: increment combo
+      const isFirstCombo = comboCount === 0;
+      comboCount++;
+      comboMultiplier = 1 + (comboCount * 0.5); // +50% per kill in combo
+      
+      // First combo kill: grant maxAmmo bullets, subsequent: +1
+      if (isFirstCombo) {
+        ammo = maxAmmo; // Start combo with full reload!
+      } else {
+        ammo++; // Blue bullet (can exceed maxAmmo)
+      }
+      
+      // Update combo display with scaling effects
+      if (comboText) {
+        comboText.setText('COMBO x' + comboMultiplier.toFixed(1) + ' (' + comboCount + ')');
+        // Scale combo text based on level
+        const scale = 1 + (comboCount * 0.1);
+        comboText.setScale(Math.min(scale, 2));
+      }
+      
+      // Award score with multiplier
+      earnedScore = Math.floor(50 * comboMultiplier);
+      score += earnedScore;
+      
+      // Progressive visual feedback based on combo level
+      let textColor = '#00ffff';
+      let textSize = 18;
+      let strokeThickness = 3;
+      let shakeIntensity = 0.005;
+      let comboMessage = '';
+      
+      if (comboCount >= 10) {
+        textColor = '#ff00ff'; // Magenta for godlike
+        textSize = 28;
+        strokeThickness = 5;
+        shakeIntensity = 0.02;
+        comboMessage = 'GODLIKE!';
+      } else if (comboCount >= 7) {
+        textColor = '#ff0080'; // Pink for insane
+        textSize = 24;
+        strokeThickness = 4;
+        shakeIntensity = 0.015;
+        comboMessage = 'INSANE!';
+      } else if (comboCount >= 5) {
+        textColor = '#ff4400'; // Orange for amazing
+        textSize = 22;
+        strokeThickness = 4;
+        shakeIntensity = 0.012;
+        comboMessage = 'AMAZING!';
+      } else if (comboCount >= 3) {
+        textColor = '#ffff00'; // Yellow for great
+        textSize = 20;
+        strokeThickness = 3;
+        shakeIntensity = 0.008;
+        comboMessage = 'GREAT!';
+      } else if (isFirstCombo) {
+        comboMessage = 'COMBO START!';
+      }
+      
+      // Visual feedback: floating score with combo
+      const t = scene.add.text(enemy.x, enemy.y - 10, '+' + earnedScore, {
+        fontSize: textSize + 'px', fontFamily: 'Arial, sans-serif', color: textColor, stroke: '#000000', strokeThickness: strokeThickness
+      }).setOrigin(0.5);
+      scene.tweens.add({ 
+        targets: t, 
+        y: t.y - 30, 
+        scale: { from: 0.5, to: 1.2 },
+        alpha: 0, 
+        duration: 700, 
+        ease: 'Back.easeOut',
+        onComplete: () => t.destroy() 
+      });
+      
+      // Show combo message
+      if (comboMessage) {
+        const msg = scene.add.text(enemy.x, enemy.y - 35, comboMessage, {
+          fontSize: (textSize + 4) + 'px', fontFamily: 'Arial, sans-serif', color: textColor, stroke: '#ffffff', strokeThickness: 2
+        }).setOrigin(0.5);
+        scene.tweens.add({ 
+          targets: msg, 
+          y: msg.y - 40, 
+          scale: { from: 1.5, to: 0.8 },
+          alpha: { from: 1, to: 0 }, 
+          duration: 1000, 
+          ease: 'Power2',
+          onComplete: () => msg.destroy() 
+        });
+      }
+      
+      // Camera shake with increasing intensity
+      if (scene.cameras && scene.cameras.main) {
+        scene.cameras.main.shake(200, shakeIntensity);
+      }
+      
+      // Update ammo display with blue color and scale
+      if (scene.ammoText) {
+        scene.ammoText.setText('Ammo: ' + ammo);
+        scene.ammoText.setColor(textColor); // Match combo color
+        // Pulse effect on ammo text
+        scene.tweens.add({
+          targets: scene.ammoText,
+          scale: { from: 1, to: 1.3 },
+          duration: 150,
+          yoyo: true,
+          ease: 'Quad.easeOut'
+        });
+      }
+      
+      // Play combo sound with increasing pitch
+      const pitchMultiplier = 1 + (comboCount * 0.1);
+      playTone(scene, 660 * pitchMultiplier, 0.08);
+    } else {
+      // Grounded kill: normal behavior
+      score += earnedScore;
+      ammo = Math.min(maxAmmo, ammo + 1); // Regular ammo (clamped)
+      
+      // Visual feedback: floating +50
+      const t = scene.add.text(enemy.x, enemy.y - 10, '+50', {
+        fontSize: '16px', fontFamily: 'Arial, sans-serif', color: '#ffdd55', stroke: '#000000', strokeThickness: 2
+      }).setOrigin(0.5);
+      scene.tweens.add({ targets: t, y: t.y - 20, alpha: 0, duration: 500, onComplete: () => t.destroy() });
+      
+      // Update ammo display with yellow color
+      if (scene.ammoText) {
+        scene.ammoText.setText('Ammo: ' + ammo);
+        scene.ammoText.setColor('#ffff00'); // Yellow for normal ammo
+      }
+      
+      // Sound feedback for grounded kill
+      playTone(scene, 660, 0.08);
+    }
+    
     if (scoreText) scoreText.setText('Score: ' + score);
-    // Gain 1 ammo on kill (clamped)
-    ammo = Math.min(maxAmmo, ammo + 1);
-    if (scene.ammoText) scene.ammoText.setText('Ammo: ' + ammo);
     enemy.destroy();
   }
 }
