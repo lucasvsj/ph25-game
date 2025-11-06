@@ -343,13 +343,6 @@ function update(_time, _delta) {
       playTone(this, 440, 0.05);
     }
     wasOnGround = onGround;
-
-    // Score by max depth
-    if (player.y > maxDepth) {
-      maxDepth = player.y;
-      if (scoreText) scoreText.setText('Score: ' + (Math.floor(maxDepth) + score));
-    }
-
   }
 
   // Ensure platforms fill below camera; recycle those far above
@@ -443,7 +436,7 @@ function endGame(scene) {
   });
 
   // Score display
-  const finalScoreText = scene.add.text(cx, cy + 100, 'TOTAL SCORE: ' + (Math.floor(maxDepth) + score), {
+  const finalScoreText = scene.add.text(cx, cy + 100, 'TOTAL SCORE: ' + score, {
     fontSize: '36px',
     fontFamily: 'Arial, sans-serif',
     color: '#00ffff',
@@ -680,7 +673,7 @@ function onBulletHitsEnemy(scene, bullet, enemy) {
     playTone(scene, 660, 0.08);
     // Score bonus
     score += 50;
-    if (scoreText) scoreText.setText('Score: ' + (Math.floor(maxDepth) + score));
+    if (scoreText) scoreText.setText('Score: ' + score);
     enemy.destroy();
   }
 }
