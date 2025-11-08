@@ -306,7 +306,7 @@ function updateControlsVisuals(s) {
     if (border) {
       border.setScale(sel ? 1.12 : 1);
       border.setStrokeStyle(sel ? 3 : 2, sel ? 0xffff00 : 0x00ff00, sel ? 1 : 0.8);
-      border.setFillStyle(0x003300, sel ? 0.9 : 0.6);
+      border.setFillStyle(sel ? 0x003300 : 0x003300, sel ? 0.9 : 0.6);
     }
   });
 }
@@ -385,6 +385,7 @@ let bullets = [];
 let platformsGroup;
 let bulletsGroup;
 let hazardsGroup;
+let enemyBulletsGroup;
 let leftHazard;
 let rightHazard;
 let hazardOn = true;
@@ -432,6 +433,14 @@ const JUMPER_SPAWN_CHANCE = 0.15;
 const JUMPER_COOLDOWN_MIN_MS = 1200;
 const JUMPER_COOLDOWN_MAX_MS = 2000;
 const JUMPER_JUMP_VEL_Y = -250;
+
+// Shooter Up enemy constants
+const SHOOTER_SPAWN_CHANCE = 0.15;
+const SHOOTER_COOLDOWN_MIN_MS = 1200;
+const SHOOTER_COOLDOWN_MAX_MS = 1800;
+
+// ===== Enemy bullets (UPWARD TRAJECTORY) =====
+const ENEMY_BULLET_SPEED_Y = -360; // negativo = hacia arriba
 
 // ===== Ray Gun (Charge Shot) constants =====
 const CHARGE_THRESHOLD_MS = 1000;          // tiempo requerido para cargar
@@ -497,6 +506,9 @@ function create() {
   hazardsGroup = this.physics.add.staticGroup();
   enemiesGroup = this.physics.add.group();
 
+  // *** Enemy bullets sin gravedad ***
+  enemyBulletsGroup = this.physics.add.group({ allowGravity: false });
+
   // Safe starting platform
   const startWidth = 160;
   const startX = 40 + startWidth / 2;
@@ -531,6 +543,8 @@ function create() {
   this.physics.add.collider(player, platformsGroup);
   this.physics.add.collider(bulletsGroup, platformsGroup, (b, _p) => { if (b && b.destroy) b.destroy(); });
   this.physics.add.overlap(bulletsGroup, enemiesGroup, (b, e) => onBulletHitsEnemy(this, b, e));
+  this.physics.add.overlap(enemyBulletsGroup, player, (_b, _p) => { if (!gameOver) endGame(this); });
+  this.physics.add.collider(enemyBulletsGroup, platformsGroup, (b) => { if (b && b.destroy) b.destroy(); });
   this.physics.add.collider(enemiesGroup, platformsGroup);
   this.physics.add.collider(enemiesGroup, enemiesGroup, (a, b) => {
     if (a.platformRef && b.platformRef && a.platformRef === b.platformRef) {
@@ -744,6 +758,18 @@ function update(_time, _delta) {
     return true;
   });
 
+  // Cleanup & enforce enemy bullet motion
+  if (enemyBulletsGroup) {
+    enemyBulletsGroup.getChildren().forEach(b => {
+      if (!b || !b.body) return;
+      // Asegura trayectoria estrictamente vertical hacia arriba
+      b.body.setAllowGravity(false);
+      if (b.body.velocity.x !== 0) b.body.setVelocityX(0);
+      if (b.body.velocity.y === 0) b.body.setVelocityY(ENEMY_BULLET_SPEED_Y);
+      if (!b.active || b.y < cam.scrollY - 60 || b.y > cam.scrollY + 1200) { if (b.destroy) b.destroy(); }
+    });
+  }
+
   // Game over if player moves above the visible area (top-out)
   if (player && player.y < cam.scrollY - 20) { endGame(this); return; }
 
@@ -795,6 +821,10 @@ function maybeRebaseWorld(scene) {
   // Bullets
   if (bulletsGroup) {
     bulletsGroup.getChildren().forEach(b => { if (b && b.y != null) b.y -= dy; });
+  }
+  // Enemy bullets
+  if (enemyBulletsGroup) {
+    enemyBulletsGroup.getChildren().forEach(b => { if (b && b.y != null) b.y -= dy; });
   }
   // Hazards (static bodies)
   if (leftHazard) { leftHazard.y -= dy; if (leftHazard.body && leftHazard.body.updateFromGameObject) leftHazard.body.updateFromGameObject(); }
@@ -986,7 +1016,8 @@ function maybeSpawnEnemies(scene, platform) {
 }
 
 function spawnEnemy(scene, platform) {
-  const isJumper = Math.random() < JUMPER_SPAWN_CHANCE;
+  const isShooter = Math.random() < SHOOTER_SPAWN_CHANCE;
+  const isJumper = !isShooter && Math.random() < JUMPER_SPAWN_CHANCE;
   const pw = platform.displayWidth;
   const minX = platform.x - pw / 2 + 16;
   const maxX = platform.x + pw / 2 - 16;
@@ -995,9 +1026,9 @@ function spawnEnemy(scene, platform) {
   const eh = 14;
   const ew = 28;
   const ey = platform.y - ph / 2 - eh / 2;
-  const enemy = scene.add.rectangle(ex, ey, ew, eh, isJumper ? 0x27f565 : 0xff2222);
-  enemy.type = isJumper ? 'jumper' : 'walker';
-  enemy.setStrokeStyle(1, isJumper ? 0x27f565 : 0xff6666, 0.8);
+  const enemy = scene.add.rectangle(ex, ey, ew, eh, isShooter ? 0xF527EE : (isJumper ? 0x27f565 : 0xff2222));
+  enemy.type = isShooter ? 'shooterUp' : (isJumper ? 'jumper' : 'walker');
+  enemy.setStrokeStyle(1, isShooter ? 0xF74DF2 : (isJumper ? 0x27f565 : 0xff6666), 0.8);
   scene.physics.add.existing(enemy);
 
   scene.tweens.add({
@@ -1020,13 +1051,17 @@ function spawnEnemy(scene, platform) {
   enemy.minX = platform.x - pw / 2 + 14;
   enemy.maxX = platform.x + pw / 2 - 14;
   enemy.dir = Phaser.Math.Between(0, 1) ? 1 : -1;
-  enemy.speed = Phaser.Math.Between(40, 80);
+  enemy.speed = isShooter ? Phaser.Math.Between(10, 30) : Phaser.Math.Between(40, 80);
   enemy.platformRef = platform;
 
   if (isJumper) {
     enemy.jumpCooldownMs = Phaser.Math.Between(JUMPER_COOLDOWN_MIN_MS, JUMPER_COOLDOWN_MAX_MS);
     enemy.jumpTimerMs = 0;
     enemy.jumpVelY = JUMPER_JUMP_VEL_Y;
+  }
+  if (isShooter) {
+    enemy.shootCooldownMs = Phaser.Math.Between(SHOOTER_COOLDOWN_MIN_MS, SHOOTER_COOLDOWN_MAX_MS);
+    enemy.shootTimerMs = 0;
   }
   
   enemy.body.setVelocityX(enemy.dir * enemy.speed);
@@ -1040,6 +1075,7 @@ function updateEnemies(scene, deltaMs) {
   enemiesGroup.getChildren().forEach(e => {
     if (!e.active || !e.body) return;
     const isJumper = e.type === 'jumper';
+    const isShooter = e.type === 'shooterUp';
     if (!isJumper && e.body.velocity.y !== 0) e.body.setVelocityY(0);
     if (Math.abs(e.body.velocity.x) < 5) e.body.setVelocityX(e.dir * e.speed);
     if (e.x <= e.minX && e.body.velocity.x < 0) { e.dir = 1; e.body.setVelocityX(e.dir * e.speed); }
@@ -1051,6 +1087,32 @@ function updateEnemies(scene, deltaMs) {
         e.body.setVelocityY(e.jumpVelY || JUMPER_JUMP_VEL_Y);
         e.jumpTimerMs = 0;
         scene.tweens.add({ targets: e, scaleY: { from: 0.9, to: 1 }, duration: 120, ease: 'Quad.easeOut' });
+      }
+    }
+
+    if (isShooter) {
+      e.shootTimerMs = (e.shootTimerMs || 0) + (deltaMs || 0);
+      if (e.shootTimerMs >= (e.shootCooldownMs || SHOOTER_COOLDOWN_MIN_MS)) {
+        // ---- BALAS ENEMIGAS: trayectoria vertical hacia ARRIBA, sin gravedad ----
+        const by = e.y - (e.displayHeight || 14) / 2;
+        const b = scene.add.rectangle(e.x, by, 4, 12, 0xFC03F5);
+        scene.physics.add.existing(b);
+        if (b.body) {
+          // asegurar que sean dinámicas y se muevan
+          b.body.setAllowGravity(false);
+          b.body.setGravity(0, 0);
+          b.body.setDrag(0, 0);
+          b.body.setAcceleration(0, 0);
+          b.body.setImmovable(false);
+          b.body.moves = true;
+          b.body.setVelocityX(0);
+          b.body.setVelocityY(ENEMY_BULLET_SPEED_Y);
+        }
+        if (enemyBulletsGroup) enemyBulletsGroup.add(b);
+        e.shootTimerMs = 0;
+        const shooters = enemiesGroup.getChildren().filter(x => x.type === 'shooterUp').length;
+        const mult = shooters > 2 ? 1.3 : 1;
+        e.shootCooldownMs = Phaser.Math.Between(SHOOTER_COOLDOWN_MIN_MS, SHOOTER_COOLDOWN_MAX_MS) * mult;
       }
     }
   });
