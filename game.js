@@ -403,9 +403,10 @@ let enemiesGroup;
 let powerUpsGroup;
 let powerUps = [];
 let jetpackActive = false;
-let jetpackEndTime = 0;
 let jetpackLeftBlock = null;
 let jetpackRightBlock = null;
+let isInvulnerable = false;
+let invulnerabilityEndTime = 0;
 let debugHitboxes = false;
 let debugGraphics;
 // Combo system
@@ -456,7 +457,7 @@ const SHIELDED_SPAWN_CHANCE = 0.08; // 8% chance
 // Power-Up constants
 const POWERUP_SPAWN_CHANCE = 0.20; // 20% chance on airborne kill
 const POWERUP_MAX_ACTIVE = 2; // max active power-ups
-const JETPACK_DURATION_MS = 8000; // 8s jetpack duration
+const INVULNERABILITY_DURATION_MS = 1500; // 1.5s invulnerability after losing jetpack
 
 // ===== Enemy bullets (UPWARD TRAJECTORY) =====
 const ENEMY_BULLET_SPEED_Y = -360; // negativo = hacia arriba
@@ -523,9 +524,10 @@ function create() {
   
   // Reset jetpack state
   jetpackActive = false;
-  jetpackEndTime = 0;
   jetpackLeftBlock = null;
   jetpackRightBlock = null;
+  isInvulnerable = false;
+  invulnerabilityEndTime = 0;
 
   // ===== Downwell-like setup =====
   if (this.physics && this.physics.world) {
@@ -578,7 +580,17 @@ function create() {
   this.physics.add.collider(player, platformsGroup);
   this.physics.add.collider(bulletsGroup, platformsGroup, (b, _p) => { if (b && b.destroy) b.destroy(); });
   this.physics.add.overlap(bulletsGroup, enemiesGroup, (b, e) => onBulletHitsEnemy(this, b, e));
-  this.physics.add.overlap(enemyBulletsGroup, player, (_b, _p) => { if (!gameOver) endGame(this); });
+  this.physics.add.overlap(enemyBulletsGroup, player, (b, _p) => {
+    if (!gameOver && !isInvulnerable) {
+      if (jetpackActive) {
+        // Jetpack absorbs hit (armor)
+        if (b && b.destroy) b.destroy();
+        onJetpackDamaged(this);
+      } else {
+        endGame(this);
+      }
+    }
+  });
   this.physics.add.collider(enemyBulletsGroup, platformsGroup, (b) => { if (b && b.destroy) b.destroy(); });
   this.physics.add.collider(enemiesGroup, platformsGroup);
   this.physics.add.collider(enemiesGroup, enemiesGroup, (a, b) => {
@@ -591,8 +603,26 @@ function create() {
 
   // Hazards
   setupHazards(this);
-  this.physics.add.overlap(player, hazardsGroup, (_pl, _hz) => { if (hazardOn) endGame(this); });
-  this.physics.add.overlap(player, enemiesGroup, (p, e) => { if (!gameOver) endGame(this); });
+  this.physics.add.overlap(player, hazardsGroup, (_pl, _hz) => {
+    if (hazardOn && !isInvulnerable) {
+      if (jetpackActive) {
+        // Jetpack absorbs hit (armor)
+        onJetpackDamaged(this);
+      } else {
+        endGame(this);
+      }
+    }
+  });
+  this.physics.add.overlap(player, enemiesGroup, (p, e) => {
+    if (!gameOver && !isInvulnerable) {
+      if (jetpackActive) {
+        // Jetpack absorbs hit (armor)
+        onJetpackDamaged(this);
+      } else {
+        endGame(this);
+      }
+    }
+  });
   
   // Power-Ups overlap
   this.physics.add.overlap(player, powerUpsGroup, (p, powerUp) => onPowerUpCollected(this, powerUp));
@@ -654,16 +684,16 @@ function create() {
     if (gameOver && (key === 'P1A' || key === 'START1')) { restartGame(scene); return; }
     if (key === 'P1L') keysState.left = true;
     if (key === 'P1R') keysState.right = true;
-    if (key === 'P1U' && player.body.blocked.down) {
+    if (key === 'P1U' && player && player.body && player.body.blocked.down) {
       player.body.setVelocityY(-jump);
       playTone(scene, 523, 0.05);
     }
     // P1A: disparo normal en aire (si no está cargando)
-    if (key === 'P1A' && !player.body.blocked.down && ammo > 0 && !isCharging) {
+    if (key === 'P1A' && player && player.body && !player.body.blocked.down && ammo > 0 && !isCharging) {
       fireBullet(scene);
     }
     // P1B: iniciar Charge Shot si está en el aire
-    if (key === 'P1B' && !player.body.blocked.down && ammo > 1 && !isCharging) {
+    if (key === 'P1B' && player && player.body && !player.body.blocked.down && ammo > 1 && !isCharging) {
       startCharging(scene);
     }
   });
@@ -676,7 +706,7 @@ function create() {
     // P1B release: disparar Ray Gun o cancelar carga
     if (key === 'P1B' && isCharging) {
       const heldTime = scene.time.now - chargeStartTime;
-      const isAirborne = !player.body.blocked.down;
+      const isAirborne = player && player.body && !player.body.blocked.down;
       if (heldTime >= CHARGE_THRESHOLD_MS && ammo >= CHARGE_COST_AMMO && isAirborne) {
         // Restaurar timeScale ANTES de disparar para evitar afectar la bala/rayo
         stopCharging(scene, true);
@@ -825,13 +855,15 @@ function update(_time, _delta) {
     return true;
   });
   
-  // Update jetpack
+  // Update jetpack position
   if (jetpackActive) {
-    if (this.time.now >= jetpackEndTime) {
-      deactivateJetpack(this);
-    } else {
-      updateJetpackPosition();
-    }
+    updateJetpackPosition();
+  }
+  
+  // Update invulnerability
+  if (isInvulnerable && this.time.now >= invulnerabilityEndTime) {
+    isInvulnerable = false;
+    player.setAlpha(1);
   }
 
   // Hazards follow camera and toggle
@@ -915,6 +947,14 @@ function endGame(scene) {
   
   // Limpiar jetpack
   if (jetpackActive) deactivateJetpack(scene);
+  
+  // Limpiar invulnerabilidad
+  isInvulnerable = false;
+  invulnerabilityEndTime = 0;
+  if (player) {
+    player.setAlpha(1);
+    player.setScale(1, 1);
+  }
   
   // Restaurar time scale
   if (scene.physics && scene.physics.world) scene.physics.world.timeScale = 1.0;
@@ -1345,8 +1385,8 @@ function onBulletHitsEnemy(scene, bullet, enemy) {
     if (scoreText) scoreText.setText('Score: ' + score);
     enemy.destroy();
     
-    // Spawn power-up on airborne kills
-    if (isAirborne && Math.random() < POWERUP_SPAWN_CHANCE && powerUps.length < POWERUP_MAX_ACTIVE) {
+    // Spawn power-up on airborne kills (only if jetpack not active)
+    if (isAirborne && !jetpackActive && Math.random() < POWERUP_SPAWN_CHANCE && powerUps.length < POWERUP_MAX_ACTIVE) {
       spawnPowerUp(scene, enemy.x, enemy.y - 40);
     }
   }
@@ -1419,7 +1459,6 @@ function onPowerUpCollected(scene, powerUp) {
 
 function activateJetpack(scene) {
   jetpackActive = true;
-  jetpackEndTime = scene.time.now + JETPACK_DURATION_MS;
   
   // Create jetpack visual blocks (left and right)
   const offsetX = 14;
@@ -1462,6 +1501,60 @@ function updateJetpackPosition() {
     jetpackRightBlock.x = player.x + offsetX;
     jetpackRightBlock.y = player.y;
   }
+}
+
+function onJetpackDamaged(scene) {
+  if (!jetpackActive || isInvulnerable) return;
+  
+  // Activate invulnerability immediately
+  isInvulnerable = true;
+  invulnerabilityEndTime = scene.time.now + INVULNERABILITY_DURATION_MS;
+  
+  // Explosion particles from jetpack
+  for (let i = 0; i < 12; i++) {
+    const angle = (i / 12) * Math.PI * 2;
+    const p = scene.add.rectangle(player.x, player.y, 4, 4, 0xff6600);
+    scene.physics.add.existing(p);
+    p.body.setVelocity(Math.cos(angle) * 200, Math.sin(angle) * 200);
+    p.body.setGravity(0, 300);
+    scene.tweens.add({ targets: p, alpha: 0, scale: 0, duration: 400, onComplete: () => p.destroy() });
+  }
+  
+  // Flash player red briefly, then start invulnerability flicker
+  player.setFillStyle(0xff0000);
+  scene.tweens.add({
+    targets: player,
+    scaleX: { from: 1, to: 1.1 },
+    scaleY: { from: 1, to: 1.1 },
+    duration: 100,
+    yoyo: true,
+    repeat: 2,
+    onComplete: () => {
+      player.setFillStyle(0xffffff);
+      player.setScale(1, 1);
+      // Start invulnerability flicker
+      startInvulnerabilityFlicker(scene);
+    }
+  });
+  
+  // Audio: jetpack break sound
+  playTone(scene, 220, 0.15);
+  playTone(scene, 180, 0.15);
+  
+  // Deactivate jetpack
+  deactivateJetpack(scene);
+}
+
+function startInvulnerabilityFlicker(scene) {
+  if (!isInvulnerable) return;
+  scene.tweens.add({
+    targets: player,
+    alpha: { from: 0.3, to: 1 },
+    duration: 150,
+    yoyo: true,
+    repeat: Math.floor(INVULNERABILITY_DURATION_MS / 300) - 1,
+    ease: 'Linear'
+  });
 }
 
 // ===== Charge Shot helpers =====
