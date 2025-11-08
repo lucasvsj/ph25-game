@@ -158,11 +158,18 @@ function menuCreate() {
   // Up arrow for jump
   g.fillTriangle(140, 170, 132, 180, 148, 180);
 
+  const enemyYValue = 346;
+
   // Section: Shooting (center)
   const centerTitle = s.add.text(400, 200, 'SHOOT DOWN', { fontSize: '18px', fontFamily: 'Arial, sans-serif', color: '#ffffff' }).setOrigin(0.5);
   const plat = s.add.rectangle(400, 360, 160, 12, 0x00aaff);
-  const pRect = s.add.rectangle(400, 360 - 6 - 12, 18, 24, 0xffffff);
-  const bullet = s.add.rectangle(400, 360 + 26, 6, 14, 0xff4444);
+  const pRect = s.add.rectangle(400, enemyYValue - 12 - 22 - 66, 18, 24, 0xffffff);
+  // Red bullets going downward (airborne, above platform)
+  // Keep bottoms <= platform top (~354)
+  const bullet = s.add.rectangle(400, enemyYValue - 12 - 22, 6, 14, 0xff4444); // bottom 343
+  const bullet2 = s.add.rectangle(400, enemyYValue - 12 - 22 - 26, 6, 14, 0xff4444); // bottom 349
+  // Red enemy target
+  const enemy1 = s.add.rectangle(400, enemyYValue, 30, 16, 0xff2222);
   // Bullet arrow
   g.fillStyle(0xff4444, 1);
   g.fillTriangle(400, 390, 392, 378, 408, 378);
@@ -172,19 +179,23 @@ function menuCreate() {
   // Section: Combo (right)
   const comboTitle = s.add.text(660, 200, 'COMBO', { fontSize: '18px', fontFamily: 'Arial, sans-serif', color: '#ffffff' }).setOrigin(0.5);
   const comboPlat = s.add.rectangle(660, 360, 160, 12, 0x00aaff);
-  const comboPlayer = s.add.rectangle(660, 360 - 6 - 12, 18, 24, 0xffffff);
-  // Blue bullets (bonus)
-  const bb1 = s.add.rectangle(630, 328, 6, 14, 0x00ffff);
-  const bb2 = s.add.rectangle(650, 315, 6, 14, 0x00ffff);
-  const bb3 = s.add.rectangle(670, 300, 6, 14, 0x00ffff);
+  const comboPlayer = s.add.rectangle(660, enemyYValue - 12 - 22 - 66, 18, 24, 0xffffff);
+  // Blue bullets (bonus) going downward (airborne, above platform)
+  const bb1 = s.add.rectangle(660, enemyYValue - 12 - 22, 6, 14, 0x00ffff); // bottom 343
+  const bb2 = s.add.rectangle(660, enemyYValue - 12 - 22 - 26, 6, 14, 0x00ffff); // bottom 349
+  // Cyan arrow to emphasize direction
+  g.fillStyle(0x00ffff, 1);
+  g.fillTriangle(660, 390, 652, 378, 668, 378);
+  // Red enemy target for combo
+  const enemy2 = s.add.rectangle(660, enemyYValue, 30, 16, 0xff2222);
   const comboInfo1 = s.add.text(660, 420, 'Air kills build combo', { fontSize: '16px', fontFamily: 'Arial, sans-serif', color: '#dddddd' }).setOrigin(0.5);
   const comboInfo2 = s.add.text(660, 444, 'Gain blue bullets; landing resets extras', { fontSize: '16px', fontFamily: 'Arial, sans-serif', color: '#aaaaaa' }).setOrigin(0.5);
 
   s.instructionsGroup.addMultiple([
     iOv, iT, iBackBorder, iBack,
     moveTitle, keyA, keyD, keyW, txtA, txtD, txtW,
-    centerTitle, plat, pRect, bullet, shootTxt, landTxt,
-    comboTitle, comboPlat, comboPlayer, bb1, bb2, bb3, comboInfo1, comboInfo2,
+    centerTitle, plat, pRect, bullet, bullet2, enemy1, shootTxt, landTxt,
+    comboTitle, comboPlat, comboPlayer, bb1, bb2, enemy2, comboInfo1, comboInfo2,
     g
   ]);
   // Panel items for keyboard focus
