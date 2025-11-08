@@ -946,8 +946,11 @@ function positionPlatform(scene, rect, y) {
 }
 
 function fireBullet(scene) {
-  const b = scene.add.rectangle(player.x, player.y + 16, 6, 14, 0xff4444);
-  b.setStrokeStyle(1, 0xff8888, 0.7); // Light red glow
+  const useBlue = comboCount > 0;
+  const bulletColor = useBlue ? 0x00ffff : 0xff4444;
+  const strokeColor = useBlue ? 0x88ffff : 0xff8888;
+  const b = scene.add.rectangle(player.x, player.y + 16, 6, 14, bulletColor);
+  b.setStrokeStyle(1, strokeColor, 0.7);
   scene.physics.add.existing(b);
   if (b.body && b.body.setSize) b.body.setSize(6, 14, true);
   b.body.setAllowGravity(false);
@@ -960,7 +963,10 @@ function fireBullet(scene) {
   if (bulletsGroup) bulletsGroup.add(b);
   bullets.push(b);
   ammo -= 1;
-  if (scene.ammoText) scene.ammoText.setText('Ammo: ' + ammo);
+  if (scene.ammoText) {
+    scene.ammoText.setText('Ammo: ' + ammo);
+    scene.ammoText.setColor(comboCount > 0 ? '#00ffff' : '#ffff00');
+  }
   // Recoil upwards
   player.body.setVelocityY(Math.min(player.body.velocity.y - recoil, -recoil));
   playTone(scene, 880, 0.05);
