@@ -429,15 +429,20 @@ let chargeStartTime = 0;
 let chargeVisuals = null;
 
 // ===== Jumper balance constants =====
-const JUMPER_SPAWN_CHANCE = 0.15;
+const JUMPER_SPAWN_CHANCE_BASE = 0.15;
 const JUMPER_COOLDOWN_MIN_MS = 1200;
 const JUMPER_COOLDOWN_MAX_MS = 2000;
 const JUMPER_JUMP_VEL_Y = -250;
 
 // Shooter Up enemy constants
-const SHOOTER_SPAWN_CHANCE = 0.15;
+const SHOOTER_SPAWN_CHANCE_BASE = 0.15;
 const SHOOTER_COOLDOWN_MIN_MS = 1200;
 const SHOOTER_COOLDOWN_MAX_MS = 1800;
+
+// Dynamic Difficulty constants
+const DIFFICULTY_DEPTH_STEP = 1000; // every 1000px increases difficulty
+const DIFFICULTY_SPAWN_MULT_MAX = 2.5; // max multiplier for special enemy spawn
+const DIFFICULTY_COUNT_MULT_MAX = 1.8; // max multiplier for enemy count
 
 // Enemy Shield constants
 const SHIELDED_SPAWN_CHANCE = 0.08; // 8% chance
@@ -1012,21 +1017,35 @@ function fireBullet(scene) {
 }
 
 // ===== Enemy helpers =====
+function getDifficultyMultiplier() {
+  const depth = Math.max(0, player.y - 150); // depth from start
+  const steps = Math.floor(depth / DIFFICULTY_DEPTH_STEP);
+  return Math.min(steps * 0.15, 1); // 0 to 1 progression
+}
+
 function maybeSpawnEnemies(scene, platform) {
   if (!enemiesGroup) return;
   if (platform && platform.noEnemies) return;
   const pw = platform.displayWidth || 100;
+  const diffMult = getDifficultyMultiplier();
+  const countMult = 1 + (diffMult * (DIFFICULTY_COUNT_MULT_MAX - 1));
   let count = 0;
-  if (Phaser.Math.Between(0, 99) < 75) count = 1;
-  if (pw > 140 && Phaser.Math.Between(0, 99) < 12) count = Math.min(2, count + 1);
-  for (let i = 0; i < count && platform.enemies.length < 2; i++) {
+  const baseChance = 75 + Math.floor(diffMult * 15); // 75% -> 90%
+  if (Phaser.Math.Between(0, 99) < baseChance) count = 1;
+  const secondChance = 12 + Math.floor(diffMult * 28); // 12% -> 40%
+  if (pw > 140 && Phaser.Math.Between(0, 99) < secondChance) count = Math.min(2, count + 1);
+  const maxEnemies = Math.floor(2 * countMult); // 2 -> 3-4 with depth
+  for (let i = 0; i < count && platform.enemies.length < maxEnemies; i++) {
     spawnEnemy(scene, platform);
   }
 }
 
 function spawnEnemy(scene, platform) {
-  const isShooter = Math.random() < SHOOTER_SPAWN_CHANCE;
-  const isJumper = !isShooter && Math.random() < JUMPER_SPAWN_CHANCE;
+  const diffMult = getDifficultyMultiplier();
+  const shooterChance = SHOOTER_SPAWN_CHANCE_BASE + (diffMult * (DIFFICULTY_SPAWN_MULT_MAX - 1) * SHOOTER_SPAWN_CHANCE_BASE);
+  const jumperChance = JUMPER_SPAWN_CHANCE_BASE + (diffMult * (DIFFICULTY_SPAWN_MULT_MAX - 1) * JUMPER_SPAWN_CHANCE_BASE);
+  const isShooter = Math.random() < shooterChance;
+  const isJumper = !isShooter && Math.random() < jumperChance;
   const pw = platform.displayWidth;
   const minX = platform.x - pw / 2 + 16;
   const maxX = platform.x + pw / 2 - 16;
