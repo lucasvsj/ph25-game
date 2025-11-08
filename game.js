@@ -440,6 +440,11 @@ let comboCount = 0;
 let comboMultiplier = 1;
 let comboText;
 
+// ===== Jumper balance constants =====
+const JUMPER_SPAWN_CHANCE = 0.15;          // 15% por enemigo spawneado
+const JUMPER_COOLDOWN_MIN_MS = 1200;       // ms
+const JUMPER_COOLDOWN_MAX_MS = 2000;       // ms
+const JUMPER_JUMP_VEL_Y = -250;            // salto vertical (negativo = hacia arriba)
 
 function create() {
   const scene = this;
@@ -998,6 +1003,9 @@ function maybeSpawnEnemies(scene, platform) {
 }
 
 function spawnEnemy(scene, platform) {
+  // Determine type: walker (default) or jumper
+  const isJumper = Math.random() < JUMPER_SPAWN_CHANCE;
+  
   const pw = platform.displayWidth;
   const minX = platform.x - pw / 2 + 16;
   const maxX = platform.x + pw / 2 - 16;
@@ -1006,10 +1014,14 @@ function spawnEnemy(scene, platform) {
   const eh = 14;
   const ew = 28;
   const ey = platform.y - ph / 2 - eh / 2; // sit on top of platform visually
-  const enemy = scene.add.rectangle(ex, ey, ew, eh, 0xff2222);
-  enemy.setStrokeStyle(1, 0xff6666, 0.8); // Red glow outline
+  const enemy = scene.add.rectangle(ex, ey, ew, eh, isJumper ? 0x27f565 : 0xff2222);
+
+  enemy.type = isJumper ? 'jumper' : 'walker';
+  // Distinctive stroke for jumper
+  enemy.setStrokeStyle(1, isJumper ? 0x27f565 : 0xff6666, 0.8); // green-ish for jumper
+
   scene.physics.add.existing(enemy);
-  
+
   // Subtle pulsing animation for enemies
   scene.tweens.add({
     targets: enemy,
@@ -1020,9 +1032,13 @@ function spawnEnemy(scene, platform) {
     ease: 'Sine.easeInOut'
   });
   
+  // ===== Physics setup =====
+  if (enemy.body && enemy.body.setAllowGravity) {
+    enemy.body.setAllowGravity(isJumper); // jumpers use gravity
+  }
+
   // Configure physics body FIRST
   enemy.body.setSize(ew, eh, true);
-  enemy.body.setAllowGravity(false);
   enemy.body.enable = true;
   enemy.body.checkCollision.up = true;
   enemy.body.checkCollision.down = true;
@@ -1035,6 +1051,13 @@ function spawnEnemy(scene, platform) {
   enemy.dir = Phaser.Math.Between(0, 1) ? 1 : -1;
   enemy.speed = Phaser.Math.Between(40, 80);
   enemy.platformRef = platform;
+
+  // Jumper data
+  if (isJumper) {
+    enemy.jumpCooldownMs = Phaser.Math.Between(JUMPER_COOLDOWN_MIN_MS, JUMPER_COOLDOWN_MAX_MS);
+    enemy.jumpTimerMs = 0;
+    enemy.jumpVelY = JUMPER_JUMP_VEL_Y;
+  }
   
   // Start movement with velocity
   enemy.body.setVelocityX(enemy.dir * enemy.speed);
@@ -1049,8 +1072,10 @@ function updateEnemies(scene, deltaMs) {
   enemiesGroup.getChildren().forEach(e => {
     if (!e.active || !e.body) return;
     
-    // Keep Y velocity at 0 (enemies walk on platforms, don't fall)
-    if (e.body.velocity.y !== 0) {
+    const isJumper = e.type === 'jumper';
+
+    // Walkers: keep Y velocity at 0 (walkers stick to platforms)
+    if (!isJumper && e.body.velocity.y !== 0) {
       e.body.setVelocityY(0);
     }
     
@@ -1067,6 +1092,23 @@ function updateEnemies(scene, deltaMs) {
     else if (e.x >= e.maxX && e.body.velocity.x > 0) { 
       e.dir = -1; 
       e.body.setVelocityX(e.dir * e.speed);
+    }
+
+    // ===== Jumper behavior =====
+    if (isJumper) {
+      // Accumulate timer; if on ground and cooldown met, jump
+      e.jumpTimerMs = (e.jumpTimerMs || 0) + (deltaMs || 0);
+      if (e.body.blocked && e.body.blocked.down && e.jumpTimerMs >= (e.jumpCooldownMs || JUMPER_COOLDOWN_MIN_MS)) {
+        e.body.setVelocityY(e.jumpVelY || JUMPER_JUMP_VEL_Y);
+        e.jumpTimerMs = 0;
+        // Micro visual feedback on jump
+        scene.tweens.add({
+          targets: e,
+          scaleY: { from: 0.9, to: 1 },
+          duration: 120,
+          ease: 'Quad.easeOut'
+        });
+      }
     }
   });
   // Clean up destroyed enemies from platform lists
