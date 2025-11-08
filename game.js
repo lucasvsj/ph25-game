@@ -445,6 +445,12 @@ const SHIELDED_SPAWN_CHANCE = 0.08; // 8% chance
 // ===== Enemy bullets (UPWARD TRAJECTORY) =====
 const ENEMY_BULLET_SPEED_Y = -360; // negativo = hacia arriba
 
+// ===== Scoring per enemy type =====
+const SCORE_WALKER = 50;      // red rectangle (normal)
+const SCORE_JUMPER = 60;      // jumper (green)
+const SCORE_SHOOTER = 80;     // shooterUp (magenta)
+const SHIELD_SCORE_MULT = 1.5; // shield is a modifier, not a type
+
 // ===== Ray Gun (Charge Shot) constants =====
 const CHARGE_THRESHOLD_MS = 1000;          // tiempo requerido para cargar
 const CHARGE_COST_AMMO = 2;                // munición requerida
@@ -1179,7 +1185,9 @@ function onBulletHitsEnemy(scene, bullet, enemy) {
     if (p && p.enemies) p.enemies = p.enemies.filter(x => x !== enemy);
     
     const isAirborne = player && player.body && !player.body.blocked.down;
-    let earnedScore = 50;
+    const baseTypeScore = enemy.type === 'jumper' ? SCORE_JUMPER : (enemy.type === 'shooterUp' ? SCORE_SHOOTER : SCORE_WALKER);
+    const baseScore = enemy.shielded ? Math.floor(baseTypeScore * SHIELD_SCORE_MULT) : baseTypeScore;
+    let earnedScore = baseScore;
     if (isAirborne) {
       const isFirstCombo = comboCount === 0;
       comboCount++;
@@ -1189,7 +1197,7 @@ function onBulletHitsEnemy(scene, bullet, enemy) {
         comboText.setText('COMBO x' + comboMultiplier.toFixed(1) + ' (' + comboCount + ')');
         const scale = 1 + (comboCount * 0.1); comboText.setScale(Math.min(scale, 2));
       }
-      earnedScore = Math.floor(50 * comboMultiplier);
+      earnedScore = Math.floor(baseScore * comboMultiplier);
       score += earnedScore;
       const tiers = [[10,'#ff00ff',28,5,0.02,'GODLIKE!'],[7,'#ff0080',24,4,0.015,'INSANE!'],[5,'#ff4400',22,4,0.012,'AMAZING!'],[3,C_YELLOW,20,3,0.008,'GREAT!']];
       const tier = tiers.find(t => comboCount >= t[0]) || [0,C_CYAN,18,3,0.005,''];
@@ -1216,7 +1224,7 @@ function onBulletHitsEnemy(scene, bullet, enemy) {
     } else {
       score += earnedScore;
       ammo = Math.min(maxAmmo, ammo + 1);
-      const t = scene.add.text(enemy.x, enemy.y - 10, '+50', {
+      const t = scene.add.text(enemy.x, enemy.y - 10, '+' + baseScore, {
         fontSize: '16px', fontFamily: FONT, color: '#ffdd55', stroke: C_BLACK, strokeThickness: 2
       }).setOrigin(0.5);
       scene.tweens.add({ targets: t, y: t.y - 20, alpha: 0, duration: 500, onComplete: () => t.destroy() });
