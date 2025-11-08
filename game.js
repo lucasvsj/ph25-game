@@ -16,6 +16,7 @@
 //   - P1L/P1R (Joystick) → Move left/right
 //   - P1U → Jump (grounded)
 //   - P1A → Shoot down (in air)
+//   - P1B → Charge Shot (hold)
 //   - START1 → Start/Confirm/Restart
 // =============================================================================
 
@@ -34,13 +35,13 @@ const ARCADE_CONTROLS = {
 const KEYBOARD_TO_ARCADE = {};
 for (const [arcadeCode, keyboardKeys] of Object.entries(ARCADE_CONTROLS)) {
   if (keyboardKeys) {
-    // Handle both array and single value
     const keys = Array.isArray(keyboardKeys) ? keyboardKeys : [keyboardKeys];
     keys.forEach(key => {
       KEYBOARD_TO_ARCADE[key] = arcadeCode;
     });
   }
 }
+
 // Scenes registry
 const GameScene = { key: 'game', create: create, update: update };
 const MenuScene = { key: 'menu', create: menuCreate, update: menuUpdate };
@@ -166,9 +167,8 @@ function menuCreate() {
   const plat = s.add.rectangle(400, 360, 160, 12, 0x00aaff);
   const pRect = s.add.rectangle(400, enemyYValue - 12 - 22 - 66, 18, 24, 0xffffff);
   // Red bullets going downward (airborne, above platform)
-  // Keep bottoms <= platform top (~354)
-  const bullet = s.add.rectangle(400, enemyYValue - 12 - 22, 6, 14, 0xff4444); // bottom 343
-  const bullet2 = s.add.rectangle(400, enemyYValue - 12 - 22 - 26, 6, 14, 0xff4444); // bottom 349
+  const bullet = s.add.rectangle(400, enemyYValue - 12 - 22, 6, 14, 0xff4444);
+  const bullet2 = s.add.rectangle(400, enemyYValue - 12 - 22 - 26, 6, 14, 0xff4444);
   // Red enemy target
   const enemy1 = s.add.rectangle(400, enemyYValue, 30, 16, 0xff2222);
   // Bullet arrow
@@ -181,13 +181,10 @@ function menuCreate() {
   const comboTitle = s.add.text(660, 200, 'COMBO', { fontSize: '18px', fontFamily: 'Arial, sans-serif', color: '#ffffff' }).setOrigin(0.5);
   const comboPlat = s.add.rectangle(660, 360, 160, 12, 0x00aaff);
   const comboPlayer = s.add.rectangle(660, enemyYValue - 12 - 22 - 66, 18, 24, 0xffffff);
-  // Blue bullets (bonus) going downward (airborne, above platform)
-  const bb1 = s.add.rectangle(660, enemyYValue - 12 - 22, 6, 14, 0x00ffff); // bottom 343
-  const bb2 = s.add.rectangle(660, enemyYValue - 12 - 22 - 26, 6, 14, 0x00ffff); // bottom 349
-  // Cyan arrow to emphasize direction
+  const bb1 = s.add.rectangle(660, enemyYValue - 12 - 22, 6, 14, 0x00ffff);
+  const bb2 = s.add.rectangle(660, enemyYValue - 12 - 22 - 26, 6, 14, 0x00ffff);
   g.fillStyle(0x00ffff, 1);
   g.fillTriangle(660, 390, 652, 378, 668, 378);
-  // Red enemy target for combo
   const enemy2 = s.add.rectangle(660, enemyYValue, 30, 16, 0xff2222);
   const comboInfo1 = s.add.text(660, 420, 'Air kills build combo', { fontSize: '16px', fontFamily: 'Arial, sans-serif', color: '#dddddd' }).setOrigin(0.5);
   const comboInfo2 = s.add.text(660, 444, 'Gain blue bullets; landing resets extras', { fontSize: '16px', fontFamily: 'Arial, sans-serif', color: '#aaaaaa' }).setOrigin(0.5);
@@ -199,7 +196,6 @@ function menuCreate() {
     comboTitle, comboPlat, comboPlayer, bb1, bb2, enemy2, comboInfo1, comboInfo2,
     g
   ]);
-  // Panel items for keyboard focus
   s.instrItems = [iBack];
   s.instrBorders = [iBackBorder];
   s.instrIndex = 0;
@@ -212,34 +208,18 @@ function menuCreate() {
     if (s.instructionsJustOpened) return; // Prevent immediate close
     const raw = ev.key;
     const key = KEYBOARD_TO_ARCADE[raw] || raw;
-    
-    // Close on Escape or P1B
-    if (raw === 'Escape' || key === 'P1B') {
-      hideInstructions(s);
-      return;
-    }
-    
-    // Navigation keys
+    if (raw === 'Escape' || key === 'P1B') { hideInstructions(s); return; }
     if (key === 'P1U' || key === 'P1D' || key === 'P1L' || key === 'P1R') {
-      s.instrIndex = 0; // Only one item, keep highlighted
-      updateInstrVisuals(s);
-      return;
+      s.instrIndex = 0; updateInstrVisuals(s); return;
     }
-    
-    // Confirm with P1A
-    if (key === 'P1A') {
-      hideInstructions(s);
-    }
+    if (key === 'P1A') { hideInstructions(s); }
   });
 
   // Controls overlay (hidden by default)
   s.controlsGroup = s.add.group();
   const cOv = s.add.rectangle(400, 300, 800, 600, 0x000000, 0.86);
   const cT = s.add.text(400, 150, 'Controls', { fontSize: '40px', fontFamily: 'Arial, sans-serif', color: '#ffff00' }).setOrigin(0.5);
-  s.controlsInfo = s.add.text(400, 200,
-    'Select an item and press a key to rebind',
-    { fontSize: '18px', fontFamily: 'Arial, sans-serif', color: '#dddddd', align: 'center' }
-  ).setOrigin(0.5);
+  s.controlsInfo = s.add.text(400, 200,'Select an item and press a key to rebind',{ fontSize: '18px', fontFamily: 'Arial, sans-serif', color: '#dddddd', align: 'center' }).setOrigin(0.5);
 
   // Normal Shoot row
   const cShootBorder = s.add.rectangle(400, 270, 360, 46, 0x001a1a, 0.5);
@@ -271,50 +251,26 @@ function menuCreate() {
   cBack.on('pointerdown', () => hideControls(s));
 
   s.controlsGroup.addMultiple([cOv, cT, s.controlsInfo, cShootBorder, cShoot, cRayBorder, cRay, cBackBorder, cBack]);
-  // Panel items for keyboard focus
   s.controlsItems = [cShoot, cRay, cBack];
   s.controlsBorders = [cShootBorder, cRayBorder, cBackBorder];
   s.controlsIndex = 0;
   updateControlsVisuals(s);
   hideControls(s);
 
-  // Panel key handling: Controls (unified handler)
+  // Panel key handling: Controls
   s.input.keyboard.on('keydown', (ev) => {
     if (!s.controlsVisible) return;
-    if (s.controlsJustOpened) return; // Prevent immediate close
+    if (s.controlsJustOpened) return;
     const raw = ev.key;
     const key = KEYBOARD_TO_ARCADE[raw] || raw;
-    
-    // Close on Escape or P1B
-    if (raw === 'Escape' || key === 'P1B') { 
-      hideControls(s); 
-      return; 
-    }
-    
-    // Navigation keys
-    if (key === 'P1U') {
-      s.controlsIndex = (s.controlsIndex + s.controlsItems.length - 1) % s.controlsItems.length;
-      updateControlsVisuals(s);
-      return;
-    }
-    if (key === 'P1D') {
-      s.controlsIndex = (s.controlsIndex + 1) % s.controlsItems.length;
-      updateControlsVisuals(s);
-      return;
-    }
-    
-    // Confirm with P1A on Back
-    if (key === 'P1A' && s.controlsIndex === 2) {
-      hideControls(s);
-      return;
-    }
-    
-    // Rebind selected action with any single letter
+    if (raw === 'Escape' || key === 'P1B') { hideControls(s); return; }
+    if (key === 'P1U') { s.controlsIndex = (s.controlsIndex + s.controlsItems.length - 1) % s.controlsItems.length; updateControlsVisuals(s); return; }
+    if (key === 'P1D') { s.controlsIndex = (s.controlsIndex + 1) % s.controlsItems.length; updateControlsVisuals(s); return; }
+    if (key === 'P1A' && s.controlsIndex === 2) { hideControls(s); return; }
     if (raw && raw.length === 1) {
       const k = raw.toLowerCase();
       if (s.controlsIndex === 0) {
         rebindShootKey(k);
-        // Update label
         if (s.controlsItems[0] && s.controlsItems[0].setText) s.controlsItems[0].setText('Normal Shoot: ' + currentShootKey.toUpperCase());
       } else if (s.controlsIndex === 1) {
         rebindRayKey(k);
@@ -325,20 +281,14 @@ function menuCreate() {
   });
 }
 
-function menuUpdate() {
-  // No-op; visuals actualizados por eventos
-}
+function menuUpdate() {}
 
 function updateMenuVisuals(s) {
   s.menuItems.forEach((t, i) => {
     const sel = i === s.menuIndex;
     const border = s.menuBorders[i];
-    
-    // Text effects
     t.setScale(sel ? 1.15 : 1);
     t.setColor(sel ? '#ffffff' : '#00ffff');
-    
-    // Border effects
     if (border) {
       border.setScale(sel ? 1.08 : 1);
       border.setStrokeStyle(sel ? 3 : 2, sel ? 0xffffff : 0x00ffff, sel ? 1 : 0.8);
@@ -352,13 +302,9 @@ function updateInstrVisuals(s) {
   s.instrItems.forEach((t, i) => {
     const sel = i === s.instrIndex;
     const border = s.instrBorders ? s.instrBorders[i] : null;
-    
-    // Enhanced visual feedback for Back button
     t.setScale(sel ? 1.25 : 1);
     t.setColor(sel ? '#ffff00' : '#00ff00');
     t.setStroke(sel ? '#ffffff' : '#000000', sel ? 4 : 3);
-    
-    // Border effects
     if (border) {
       border.setScale(sel ? 1.12 : 1);
       border.setStrokeStyle(sel ? 3 : 2, sel ? 0xffff00 : 0x00ff00, sel ? 1 : 0.8);
@@ -372,13 +318,9 @@ function updateControlsVisuals(s) {
   s.controlsItems.forEach((t, i) => {
     const sel = i === s.controlsIndex;
     const border = s.controlsBorders ? s.controlsBorders[i] : null;
-    
-    // Enhanced visual feedback for Back button
     t.setScale(sel ? 1.25 : 1);
     t.setColor(sel ? '#ffff00' : '#00ff00');
     t.setStroke(sel ? '#ffffff' : '#000000', sel ? 4 : 3);
-    
-    // Border effects
     if (border) {
       border.setScale(sel ? 1.12 : 1);
       border.setStrokeStyle(sel ? 3 : 2, sel ? 0xffff00 : 0x00ff00, sel ? 1 : 0.8);
@@ -414,11 +356,9 @@ function hideControls(s) {
 
 function rebindShootKey(newKey) {
   const k = (newKey || '').toLowerCase();
-  // Only single letter a-z and not reserved or conflicting
   if (!/^[a-z]$/.test(k)) return;
   if (k === 'w' || k === 'a' || k === 's' || k === 'd') return;
   if (k === currentRayKey) return;
-  // Remove previous mapping for P1A
   if (currentShootKey && KEYBOARD_TO_ARCADE[currentShootKey] === 'P1A') {
     delete KEYBOARD_TO_ARCADE[currentShootKey];
   }
@@ -429,11 +369,9 @@ function rebindShootKey(newKey) {
 
 function rebindRayKey(newKey) {
   const k = (newKey || '').toLowerCase();
-  // Only single letter a-z and not reserved or conflicting
   if (!/^[a-z]$/.test(k)) return;
   if (k === 'w' || k === 'a' || k === 's' || k === 'd') return;
   if (k === currentShootKey) return;
-  // Remove previous mapping for P1B
   if (currentRayKey && KEYBOARD_TO_ARCADE[currentRayKey] === 'P1B') {
     delete KEYBOARD_TO_ARCADE[currentRayKey];
   }
@@ -491,39 +429,42 @@ let comboText;
 let isCharging = false;
 let chargeStartTime = 0;
 let chargeVisuals = null;       // grupo para visuales de canalización
-let chargeToneInterval = null;  // intervalo de audio
-let slowMoTween = null;         // tween de time scale
+let slowMoTween = null;         // tween de time scale (no usado, pero por compatibilidad)
 
 // ===== Jumper balance constants =====
-const JUMPER_SPAWN_CHANCE = 0.15;          // 15% por enemigo spawneado
-const JUMPER_COOLDOWN_MIN_MS = 1200;       // ms
-const JUMPER_COOLDOWN_MAX_MS = 2000;       // ms
-const JUMPER_JUMP_VEL_Y = -250;            // salto vertical (negativo = hacia arriba)
+const JUMPER_SPAWN_CHANCE = 0.15;
+const JUMPER_COOLDOWN_MIN_MS = 1200;
+const JUMPER_COOLDOWN_MAX_MS = 2000;
+const JUMPER_JUMP_VEL_Y = -250;
 
 // ===== Ray Gun (Charge Shot) constants =====
-const CHARGE_THRESHOLD_MS = 1000;          // ⚠️ MODIFICA ESTO: tiempo en ms para activar Ray Gun (1 segundo por defecto)
+const CHARGE_THRESHOLD_MS = 1000;          // tiempo requerido para cargar
 const CHARGE_COST_AMMO = 2;                // munición requerida
 const CHARGE_PIERCE_COUNT = 2;             // enemigos que atraviesa el rayo
-const CHARGE_SLOWMO_SCALE = 3.33;          // ⚠️ escala de tiempo durante carga (3.33 = ~30% velocidad, valores MAYORES = más lento)
-const CHARGE_RAY_MAX_DISTANCE = 2000;      // ⚠️ MODIFICA ESTO: distancia máxima del rayo (px)
-const CHARGE_RAY_VISUAL_DURATION = 200;    // duración visual del rayo (ms)
-const CHARGE_RAMP_IN_MS = 150;             // duración de ramp-in a slow-mo
-const CHARGE_RAMP_OUT_MS = 180;            // duración de ramp-out desde slow-mo
+const CHARGE_SLOWMO_SCALE = 3.33;          // >1 = más lento (ej: 3.33 ≈ 30% de velocidad)
+const CHARGE_RAY_MAX_DISTANCE = 2000;      // distancia máxima del rayo
+const CHARGE_RAY_VISUAL_DURATION = 200;    // duración visual del rayo
+const CHARGE_RAMP_IN_MS = 150;             // si deseas ramp, puedes re-implementarlo
+const CHARGE_RAMP_OUT_MS = 180;
+
+// ======== AUDIO DINÁMICO PARA CHARGE ========
+const CHARGE_AUDIO_MIN_HZ = 440;           // inicio del sweep
+const CHARGE_AUDIO_MAX_HZ = 900;           // fin del sweep
+let chargeOsc = null;
+let chargeGain = null;
+let chargeAudioCompleted = false;
 
 function create() {
   const scene = this;
   // CHAINFALL scene init tone
   playTone(this, 440, 0.1);
   
-  // MUSIC
+  // MUSIC (opcional)
   // playBackgroundMusic(this);
+
   // Reset core state on scene start
   if (this.physics && this.physics.world && this.physics.world.isPaused) this.physics.world.resume();
-  
-  // Asegurar que time scale está en 1.0 al inicio
-  if (this.physics && this.physics.world) {
-    this.physics.world.timeScale = 1.0;
-  }
+  if (this.physics && this.physics.world) this.physics.world.timeScale = 1.0;
   
   gameOver = false;
   score = 0;
@@ -538,8 +479,9 @@ function create() {
   isCharging = false;
   chargeStartTime = 0;
   chargeVisuals = null;
-  chargeToneInterval = null;
   slowMoTween = null;
+  chargeAudioCompleted = false;
+  stopChargeAudio(this); // asegurar que no haya audio residual
   
   // Reset combo state
   comboCount = 0;
@@ -550,7 +492,6 @@ function create() {
   bullets = [];
 
   // ===== Downwell-like setup =====
-  // Physics world bounds (very tall world)
   if (this.physics && this.physics.world) {
     this.physics.world.setBounds(0, 0, 800, worldHeight);
   }
@@ -561,12 +502,12 @@ function create() {
   hazardsGroup = this.physics.add.staticGroup();
   enemiesGroup = this.physics.add.group();
 
-  // Safe starting platform (left side, yellow, no enemy spawns)
+  // Safe starting platform
   const startWidth = 160;
   const startX = 40 + startWidth / 2;
   const startY = 140;
   const startPlat = this.add.rectangle(startX, startY, startWidth, 12, 0xffff00);
-  startPlat.setStrokeStyle(2, 0xffaa00, 0.9); // Orange stroke for emphasis
+  startPlat.setStrokeStyle(2, 0xffaa00, 0.9);
   this.physics.add.existing(startPlat, true);
   if (startPlat.body) {
     startPlat.body.checkCollision.up = true;
@@ -580,9 +521,9 @@ function create() {
   if (platformsGroup) platformsGroup.add(startPlat);
   platforms.push(startPlat);
 
-  // Player: white rectangle with dynamic body and glow effect
+  // Player
   player = this.add.rectangle(startX, startY - 6 - 12, 18, 24, 0xffffff);
-  player.setStrokeStyle(2, 0x00ffff, 0.6); // Cyan glow
+  player.setStrokeStyle(2, 0x00ffff, 0.6);
   this.physics.add.existing(player);
   if (player.body && player.body.setSize) player.body.setSize(player.displayWidth, player.displayHeight, true);
   player.body.setCollideWorldBounds(true);
@@ -594,44 +535,32 @@ function create() {
   player.body.checkCollision.left = true;
   player.body.checkCollision.right = true;
 
-  // Seed initial platforms (start below the safe platform)
+  // Seed platforms
   seedPlatforms(this, 220, this.cameras.main.scrollY + 800);
-  // Colliders (single)
-  this.physics.add.collider(player, platformsGroup);
-  this.physics.add.collider(bulletsGroup, platformsGroup, (b /* bullet */, _p /* platform */) => {
-    if (b && b.destroy) b.destroy();
-  });
-  // Bullets kill enemies
-  this.physics.add.overlap(bulletsGroup, enemiesGroup, (b, e) => onBulletHitsEnemy(this, b, e));
 
-  // Enemies collide with platforms (stay on top)
+  // Colliders
+  this.physics.add.collider(player, platformsGroup);
+  this.physics.add.collider(bulletsGroup, platformsGroup, (b, _p) => { if (b && b.destroy) b.destroy(); });
+  this.physics.add.overlap(bulletsGroup, enemiesGroup, (b, e) => onBulletHitsEnemy(this, b, e));
   this.physics.add.collider(enemiesGroup, platformsGroup);
-  
-  // Enemies collide with each other (reverse direction on same platform)
   this.physics.add.collider(enemiesGroup, enemiesGroup, (a, b) => {
     if (a.platformRef && b.platformRef && a.platformRef === b.platformRef) {
-      a.dir = -a.dir;
-      b.dir = -b.dir;
+      a.dir = -a.dir; b.dir = -b.dir;
       a.body.setVelocityX(a.dir * a.speed);
       b.body.setVelocityX(b.dir * b.speed);
     }
   });
 
-  // Side hazards (prevent safe wall-riding)
+  // Hazards
   setupHazards(this);
-  this.physics.add.overlap(player, hazardsGroup, (_pl, _hz) => {
-    if (hazardOn) endGame(this);
-  });
-  // Player dies on touching enemies
-  this.physics.add.overlap(player, enemiesGroup, (p, e) => { 
-    if (!gameOver) endGame(this); 
-  });
+  this.physics.add.overlap(player, hazardsGroup, (_pl, _hz) => { if (hazardOn) endGame(this); });
+  this.physics.add.overlap(player, enemiesGroup, (p, e) => { if (!gameOver) endGame(this); });
 
-  // Camera follow (soft)
+  // Camera
   this.cameras.main.startFollow(player, false, 0.1, 0.1);
   this.cameras.main.setBackgroundColor('#000000');
 
-  // HUD with stylized backgrounds
+  // HUD
   const hudBg = this.add.rectangle(10, 10, 200, 90, 0x000000, 0.5);
   hudBg.setOrigin(0, 0);
   hudBg.setStrokeStyle(2, 0x00ffff, 0.4);
@@ -662,7 +591,6 @@ function create() {
     strokeThickness: 2
   }).setScrollFactor(0).setDepth(1000);
 
-  // Title splash
   const titleSplash = this.add.text(400, 200, 'CHAINFALL', {
     fontSize: '64px',
     fontFamily: 'Arial, sans-serif',
@@ -679,13 +607,10 @@ function create() {
     onComplete: () => titleSplash.destroy()
   });
 
-  // Input handlers (use arcade mapping)
+  // Input handlers (arcade mapping)
   this.input.keyboard.on('keydown', (event) => {
     const key = KEYBOARD_TO_ARCADE[event.key] || event.key;
-    if (gameOver && (key === 'P1A' || key === 'START1')) {
-      restartGame(scene);
-      return;
-    }
+    if (gameOver && (key === 'P1A' || key === 'START1')) { restartGame(scene); return; }
     if (key === 'P1L') keysState.left = true;
     if (key === 'P1R') keysState.right = true;
     if (key === 'P1U' && player.body.blocked.down) {
@@ -707,32 +632,26 @@ function create() {
     if (key === 'P1L') keysState.left = false;
     if (key === 'P1R') keysState.right = false;
     
-    // P1B release: disparar Charge Shot o cancelar carga
+    // P1B release: disparar Ray Gun o cancelar carga
     if (key === 'P1B' && isCharging) {
       const heldTime = scene.time.now - chargeStartTime;
       const isAirborne = !player.body.blocked.down;
-      
       if (heldTime >= CHARGE_THRESHOLD_MS && ammo >= CHARGE_COST_AMMO && isAirborne) {
-        // IMPORTANTE: Primero restaurar timeScale a 1.0, LUEGO disparar
-        // De lo contrario, la bala se crea con velocidad afectada por slow-mo
-        stopCharging(scene, true); // fired = true
-        fireChargedBullet(scene); // Ahora disparar con timeScale normal
+        // Restaurar timeScale ANTES de disparar para evitar afectar la bala/rayo
+        stopCharging(scene, true);
+        fireChargedBullet(scene);
       } else {
-        // Cancelar carga sin disparar
         stopCharging(scene, false);
       }
     }
   });
 
-  // Toggle hurtbox/hitbox debug with P
+  // Debug hitboxes with P
   this.input.keyboard.on('keydown-P', () => {
     debugHitboxes = !debugHitboxes;
     if (!debugHitboxes && debugGraphics) debugGraphics.clear();
   });
-  if (debugGraphics && !debugGraphics.scene) {
-    // stale reference from previous scene, drop it
-    debugGraphics = null;
-  }
+  if (debugGraphics && !debugGraphics.scene) debugGraphics = null;
   if (debugGraphics) debugGraphics.destroy();
   debugGraphics = this.add.graphics();
   debugGraphics.setDepth(4500);
@@ -748,97 +667,65 @@ function update(_time, _delta) {
     if (keysState.left) vx -= speed;
     if (keysState.right) vx += speed;
     
-    // Durante slow-mo, compensar velocidad X del jugador para mantenerla normal
+    // Compensación de slow-mo: mantener X del jugador a “sensación normal”
     const timeScale = this.physics.world.timeScale || 1.0;
-    
     if (isCharging && timeScale > 1.0) {
-      // Como timeScale es un divisor, multiplicamos vx por el timeScale para compensar
       vx = vx * timeScale;
     }
-    
     player.body.setVelocityX(vx);
     
-    // Cancelar carga si el jugador toca el suelo
+    // Cancelar carga si toca el suelo
     if (isCharging && player.body.blocked.down) {
       stopCharging(this, false);
     }
     
-    // Dibujar anillos de canalización alrededor del jugador
+    // Visuales de canalización
     if (isCharging && chargeVisuals) {
       chargeVisuals.clear();
       const progress = Math.min((this.time.now - chargeStartTime) / CHARGE_THRESHOLD_MS, 1.0);
-      
-      // Anillos concéntricos amarillos que crecen con el progreso
       for (let i = 0; i < 3; i++) {
         const radius = 20 + (i * 12) + (progress * 10);
         const alpha = 0.6 - (i * 0.15);
-        chargeVisuals.lineStyle(2, 0xEEF527, alpha); // Amarillo brillante
+        chargeVisuals.lineStyle(2, 0xEEF527, alpha);
         chargeVisuals.strokeCircle(player.x, player.y, radius);
       }
-      
-      // Barra de progreso simple sobre el jugador
+      // Barra de progreso
       if (progress < 1.0) {
-        const barWidth = 30;
-        const barHeight = 4;
-        const barX = player.x - barWidth / 2;
-        const barY = player.y - 20;
-        
-        // Fondo
+        const barWidth = 30, barHeight = 4;
+        const barX = player.x - barWidth / 2, barY = player.y - 20;
         chargeVisuals.fillStyle(0x000000, 0.6);
         chargeVisuals.fillRect(barX, barY, barWidth, barHeight);
-        
-        // Progreso amarillo
         chargeVisuals.fillStyle(0xEEF527, 0.9);
         chargeVisuals.fillRect(barX, barY, barWidth * progress, barHeight);
       }
     }
 
+    // === AUDIO DINÁMICO DE CARGA ===
+    if (isCharging) {
+      updateChargeAudio(this);
+    }
+
     // Land detection to reset ammo and combo
     const onGround = player.body.blocked.down;
     if (onGround && !wasOnGround) {
-      // Reset combo if had blue bullets
       if (ammo > maxAmmo || comboCount > 0) {
         comboCount = 0;
         comboMultiplier = 1;
-        if (comboText) {
-          comboText.setText('');
-          comboText.setScale(1); // Reset scale
-        }
+        if (comboText) { comboText.setText(''); comboText.setScale(1); }
       }
-      // ALWAYS reset ammo to maxAmmo when landing
       ammo = maxAmmo;
-      if (this.ammoText) {
-        this.ammoText.setText('Ammo: ' + ammo);
-        // Reset to yellow color (normal ammo)
-        this.ammoText.setColor('#ffff00');
-      }
+      if (this.ammoText) { this.ammoText.setText('Ammo: ' + ammo); this.ammoText.setColor('#ffff00'); }
       playTone(this, 440, 0.05);
-      
-      // Landing visual effects
-      // Player flash effect (change color temporarily)
-      player.setFillStyle(0x00ffff); // Cyan flash
-      this.tweens.add({
-        targets: player,
-        duration: 200,
-        onComplete: () => player.setFillStyle(0xffffff) // Back to white
-      });
-      
-      // Small particle burst on landing
+      // Landing visuals
+      player.setFillStyle(0x00ffff);
+      this.tweens.add({ targets: player, duration: 200, onComplete: () => player.setFillStyle(0xffffff) });
       for (let i = 0; i < 4; i++) {
         const px = player.x + (Math.random() - 0.5) * 20;
         const particle = this.add.rectangle(px, player.y + 12, 3, 3, 0x00aaff);
         this.physics.add.existing(particle);
-        particle.body.setVelocity(
-          (Math.random() - 0.5) * 100,
-          -Math.random() * 80
-        );
+        particle.body.setVelocity((Math.random() - 0.5) * 100, -Math.random() * 80);
         particle.body.setGravity(0, 400);
-        this.tweens.add({
-          targets: particle,
-          alpha: 0,
-          duration: 400,
-          onComplete: () => particle.destroy()
-        });
+        this.tweens.add({ targets: particle, alpha: 0, duration: 400, onComplete: () => particle.destroy() });
       }
     }
     wasOnGround = onGround;
@@ -846,13 +733,11 @@ function update(_time, _delta) {
 
   // Ensure platforms fill below camera; recycle those far above
   const cam = this.cameras.main;
-  // Camera: only descend, never move up (Downwell-like)
   cam.scrollY = Math.max(cam.scrollY, player.y - 260);
   seedPlatforms(this, cam.scrollY + 100, cam.scrollY + 800);
   for (let i = 0; i < platforms.length; i++) {
     const p = platforms[i];
     if (p.y < cam.scrollY - 60) {
-      // move platform below
       const maxY = platforms.reduce((m, o) => Math.max(m, o.y), cam.scrollY + 300);
       positionPlatform(this, p, maxY + Phaser.Math.Between(70, 120));
       if (p.body && p.body.updateFromGameObject) p.body.updateFromGameObject();
@@ -862,18 +747,12 @@ function update(_time, _delta) {
   // Cleanup bullets below view
   bullets = bullets.filter(b => {
     if (!b.active) return false;
-    if (b.y > cam.scrollY + 700) {
-      b.destroy();
-      return false;
-    }
+    if (b.y > cam.scrollY + 700) { b.destroy(); return false; }
     return true;
   });
 
   // Game over if player moves above the visible area (top-out)
-  if (player && player.y < cam.scrollY - 20) {
-    endGame(this);
-    return;
-  }
+  if (player && player.y < cam.scrollY - 20) { endGame(this); return; }
 
   // Hazards follow camera and toggle damage
   updateHazards(this);
@@ -897,53 +776,37 @@ function endGame(scene) {
   gameOver = true;
   playTone(scene, 220, 0.5);
   
-  // Limpiar estado de carga si estaba activo
-  if (isCharging) {
-    stopCharging(scene, false);
-  }
+  // Limpiar estado de carga
+  if (isCharging) stopCharging(scene, false);
+  stopChargeAudio(scene);
   
-  // Restaurar time scale a normal
-  if (scene.physics && scene.physics.world) {
-    scene.physics.world.timeScale = 1.0;
-  }
+  // Restaurar time scale
+  if (scene.physics && scene.physics.world) scene.physics.world.timeScale = 1.0;
   
-  // Completely stop gameplay
+  // Stop gameplay
   if (scene.physics && scene.physics.world) scene.physics.world.pause();
   if (scene.cameras && scene.cameras.main) scene.cameras.main.stopFollow();
 
-  // Semi-transparent overlay
+  // Overlay
   const overlay = scene.add.graphics();
   overlay.fillStyle(0x000000, 0.7);
   overlay.fillRect(0, 0, 800, 600);
   overlay.setDepth(9999);
   overlay.setScrollFactor(0);
 
-  // Game title on overlay (styled like main menu)
   const titleText = scene.add.text(400, 70, 'CHAINFALL', {
     fontSize: '42px',
     fontFamily: 'Arial, sans-serif',
     color: '#ffffff',
     stroke: '#00ffff',
     strokeThickness: 4
-  }).setOrigin(0.5);
-  titleText.setDepth(10000);
-  titleText.setScrollFactor(0);
-  
-  // Subtle pulsing for title
-  scene.tweens.add({
-    targets: titleText,
-    scale: { from: 1, to: 1.03 },
-    duration: 1500,
-    yoyo: true,
-    repeat: -1,
-    ease: 'Sine.easeInOut'
-  });
+  }).setOrigin(0.5).setDepth(10000).setScrollFactor(0);
+  scene.tweens.add({ targets: titleText, scale: { from: 1, to: 1.03 }, duration: 1500, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
 
   const cam = scene.cameras.main;
   const cx = player ? (player.x - cam.scrollX) : 400;
   const cy = player ? (player.y - cam.scrollY) : 300;
 
-  // Game Over title with glow effect
   const gameOverText = scene.add.text(cx, cy, 'GAME OVER', {
     fontSize: '64px',
     fontFamily: 'Arial, sans-serif',
@@ -951,126 +814,53 @@ function endGame(scene) {
     align: 'center',
     stroke: '#ff6666',
     strokeThickness: 8
-  }).setOrigin(0.5);
-  gameOverText.setDepth(10000);
-  gameOverText.setScrollFactor(0);
+  }).setOrigin(0.5).setDepth(10000).setScrollFactor(0);
+  scene.tweens.add({ targets: gameOverText, scale: { from: 1, to: 1.1 }, alpha: { from: 1, to: 0.8 }, duration: 800, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
 
-  // Pulsing animation for game over text
-  scene.tweens.add({
-    targets: gameOverText,
-    scale: { from: 1, to: 1.1 },
-    alpha: { from: 1, to: 0.8 },
-    duration: 800,
-    yoyo: true,
-    repeat: -1,
-    ease: 'Sine.easeInOut'
-  });
-
-  // Score display
   const finalScoreText = scene.add.text(cx, cy + 100, 'TOTAL SCORE: ' + score, {
-    fontSize: '36px',
-    fontFamily: 'Arial, sans-serif',
-    color: '#00ffff',
-    align: 'center',
-    stroke: '#000000',
-    strokeThickness: 4
-  }).setOrigin(0.5);
-  finalScoreText.setDepth(10000);
-  finalScoreText.setScrollFactor(0);
+    fontSize: '36px', fontFamily: 'Arial, sans-serif', color: '#00ffff', stroke: '#000000', strokeThickness: 4
+  }).setOrigin(0.5).setDepth(10000).setScrollFactor(0);
 
-  // Restart instruction with subtle animation
   const restartText = scene.add.text(cx, cy + 180, 'Press ' + currentShootKey.toUpperCase() + ' to Restart', {
-    fontSize: '24px',
-    fontFamily: 'Arial, sans-serif',
-    color: '#ffff00',
-    align: 'center',
-    stroke: '#000000',
-    strokeThickness: 3
-  }).setOrigin(0.5);
-  restartText.setDepth(10000);
-  restartText.setScrollFactor(0);
+    fontSize: '24px', fontFamily: 'Arial, sans-serif', color: '#ffff00', stroke: '#000000', strokeThickness: 3
+  }).setOrigin(0.5).setDepth(10000).setScrollFactor(0);
+  scene.tweens.add({ targets: restartText, alpha: { from: 1, to: 0.3 }, duration: 600, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
 
-  // Blinking animation for restart text
-  scene.tweens.add({
-    targets: restartText,
-    alpha: { from: 1, to: 0.3 },
-    duration: 600,
-    yoyo: true,
-    repeat: -1,
-    ease: 'Sine.easeInOut'
-  });
-
-  // Main Menu button with border (styled like main menu)
   const menuBorder = scene.add.rectangle(cx, cy + 240, 240, 50, 0x001a1a, 0.6);
   menuBorder.setStrokeStyle(2, 0x00ffff, 0.8);
-  menuBorder.setDepth(10000);
-  menuBorder.setScrollFactor(0);
-  
+  menuBorder.setDepth(10000).setScrollFactor(0);
   const menuBtn = scene.add.text(cx, cy + 240, 'Main Menu', {
-    fontSize: '28px',
-    fontFamily: 'Arial, sans-serif',
-    color: '#00ffff',
-    align: 'center',
-    stroke: '#000000',
-    strokeThickness: 3
-  }).setOrigin(0.5).setInteractive({ useHandCursor: true });
-  
-  // Hover effects
+    fontSize: '28px', fontFamily: 'Arial, sans-serif', color: '#00ffff', stroke: '#000000', strokeThickness: 3
+  }).setOrigin(0.5).setInteractive({ useHandCursor: true }).setDepth(10001).setScrollFactor(0);
   menuBtn.on('pointerover', () => {
-    menuBtn.setScale(1.15);
-    menuBtn.setColor('#ffffff');
-    menuBorder.setScale(1.08);
-    menuBorder.setStrokeStyle(3, 0xffffff, 1);
-    menuBorder.setFillStyle(0x001a1a, 0.8);
+    menuBtn.setScale(1.15); menuBtn.setColor('#ffffff');
+    menuBorder.setScale(1.08); menuBorder.setStrokeStyle(3, 0xffffff, 1); menuBorder.setFillStyle(0x001a1a, 0.8);
   });
-  
   menuBtn.on('pointerout', () => {
-    menuBtn.setScale(1);
-    menuBtn.setColor('#00ffff');
-    menuBorder.setScale(1);
-    menuBorder.setStrokeStyle(2, 0x00ffff, 0.8);
-    menuBorder.setFillStyle(0x001a1a, 0.6);
+    menuBtn.setScale(1); menuBtn.setColor('#00ffff');
+    menuBorder.setScale(1); menuBorder.setStrokeStyle(2, 0x00ffff, 0.8); menuBorder.setFillStyle(0x001a1a, 0.6);
   });
-  
-  menuBtn.on('pointerdown', () => {
-    scene.scene.start('menu');
-  });
-  
-  menuBtn.setDepth(10001);
-  menuBorder.setDepth(10000);
-  menuBtn.setScrollFactor(0);
+  menuBtn.on('pointerdown', () => { scene.scene.start('menu'); });
 }
 
 function restartGame(scene) {
-  // Minimal reset and full scene restart to avoid stale references
   gameOver = false;
   score = 0;
   maxDepth = 0;
   ammo = maxAmmo;
   wasOnGround = false;
   keysState.left = keysState.right = false;
-  
-  // Reset combo state
   comboCount = 0;
   comboMultiplier = 1;
-  
-  // Reset charge shot state
+
+  // Reset charge state + audio
   isCharging = false;
   chargeStartTime = 0;
-  if (chargeVisuals) {
-    chargeVisuals.destroy();
-    chargeVisuals = null;
-  }
-  if (chargeToneInterval) {
-    clearInterval(chargeToneInterval);
-    chargeToneInterval = null;
-  }
-  if (slowMoTween) {
-    slowMoTween.stop();
-    slowMoTween = null;
-  }
-  
-  // Clear globals to force re-creation on next create()
+  if (chargeVisuals) { chargeVisuals.destroy(); chargeVisuals = null; }
+  if (slowMoTween) { slowMoTween.stop(); slowMoTween = null; }
+  chargeAudioCompleted = false;
+  stopChargeAudio(scene);
+
   scoreText = null;
   comboText = null;
   platforms = [];
@@ -1094,14 +884,13 @@ function createPlatform(scene, y) {
   const width = Phaser.Math.Between(70, 180);
   const x = Phaser.Math.Between(40, 760 - width);
   const rect = scene.add.rectangle(x + width / 2, y, width, 12, 0x00aaff);
-  rect.setStrokeStyle(1, 0x0088dd, 0.8); // Darker blue outline
-  scene.physics.add.existing(rect, true); // static body
+  rect.setStrokeStyle(1, 0x0088dd, 0.8);
+  scene.physics.add.existing(rect, true);
   if (rect.body) {
-    // One-way: collide only on top face
     rect.body.checkCollision.up = true;
-    rect.body.checkCollision.down = true; // now collide from below too (solid from bottom)
-    rect.body.checkCollision.left = true;  // enable side collisions
-    rect.body.checkCollision.right = true; // enable side collisions
+    rect.body.checkCollision.down = true;
+    rect.body.checkCollision.left = true;
+    rect.body.checkCollision.right = true;
   }
   rect.enemies = [];
   if (platformsGroup) platformsGroup.add(rect);
@@ -1118,17 +907,15 @@ function positionPlatform(scene, rect, y) {
   rect.x = x + width / 2;
   rect.y = y;
   rect.setFillStyle(0x00aaff);
-  rect.setStrokeStyle(1, 0x0088dd, 0.8); // Re-apply stroke on reposition
+  rect.setStrokeStyle(1, 0x0088dd, 0.8);
   rect.noEnemies = false;
   if (rect.body) {
-    // ensure collisions remain solid on both top and bottom faces
     rect.body.checkCollision.up = true;
     rect.body.checkCollision.down = true;
-    rect.body.checkCollision.left = true;  // enable side collisions
-    rect.body.checkCollision.right = true; // enable side collisions
+    rect.body.checkCollision.left = true;
+    rect.body.checkCollision.right = true;
     if (rect.body.updateFromGameObject) rect.body.updateFromGameObject();
   }
-  // Reset enemies on this platform and respawn
   if (rect.enemies && rect.enemies.length) {
     rect.enemies.forEach(e => e.destroy());
     rect.enemies = [];
@@ -1170,7 +957,6 @@ function maybeSpawnEnemies(scene, platform) {
   if (!enemiesGroup) return;
   if (platform && platform.noEnemies) return;
   const pw = platform.displayWidth || 100;
-  // Decide count: 0-2, bias to fewer, and ensure max 2
   let count = 0;
   if (Phaser.Math.Between(0, 99) < 75) count = 1;
   if (pw > 140 && Phaser.Math.Between(0, 99) < 12) count = Math.min(2, count + 1);
@@ -1180,9 +966,7 @@ function maybeSpawnEnemies(scene, platform) {
 }
 
 function spawnEnemy(scene, platform) {
-  // Determine type: walker (default) or jumper
   const isJumper = Math.random() < JUMPER_SPAWN_CHANCE;
-  
   const pw = platform.displayWidth;
   const minX = platform.x - pw / 2 + 16;
   const maxX = platform.x + pw / 2 - 16;
@@ -1190,16 +974,12 @@ function spawnEnemy(scene, platform) {
   const ph = platform.displayHeight || 12;
   const eh = 14;
   const ew = 28;
-  const ey = platform.y - ph / 2 - eh / 2; // sit on top of platform visually
+  const ey = platform.y - ph / 2 - eh / 2;
   const enemy = scene.add.rectangle(ex, ey, ew, eh, isJumper ? 0x27f565 : 0xff2222);
-
   enemy.type = isJumper ? 'jumper' : 'walker';
-  // Distinctive stroke for jumper
-  enemy.setStrokeStyle(1, isJumper ? 0x27f565 : 0xff6666, 0.8); // green-ish for jumper
-
+  enemy.setStrokeStyle(1, isJumper ? 0x27f565 : 0xff6666, 0.8);
   scene.physics.add.existing(enemy);
 
-  // Subtle pulsing animation for enemies
   scene.tweens.add({
     targets: enemy,
     alpha: { from: 1, to: 0.85 },
@@ -1209,12 +989,10 @@ function spawnEnemy(scene, platform) {
     ease: 'Sine.easeInOut'
   });
   
-  // ===== Physics setup =====
   if (enemy.body && enemy.body.setAllowGravity) {
-    enemy.body.setAllowGravity(isJumper); // jumpers use gravity
+    enemy.body.setAllowGravity(isJumper);
   }
 
-  // Configure physics body FIRST
   enemy.body.setSize(ew, eh, true);
   enemy.body.enable = true;
   enemy.body.checkCollision.up = true;
@@ -1222,21 +1000,18 @@ function spawnEnemy(scene, platform) {
   enemy.body.checkCollision.left = true;
   enemy.body.checkCollision.right = true;
   
-  // Store movement data with proper boundaries
-  enemy.minX = platform.x - pw / 2 + 14; // Left boundary with margin
-  enemy.maxX = platform.x + pw / 2 - 14; // Right boundary with margin
+  enemy.minX = platform.x - pw / 2 + 14;
+  enemy.maxX = platform.x + pw / 2 - 14;
   enemy.dir = Phaser.Math.Between(0, 1) ? 1 : -1;
   enemy.speed = Phaser.Math.Between(40, 80);
   enemy.platformRef = platform;
 
-  // Jumper data
   if (isJumper) {
     enemy.jumpCooldownMs = Phaser.Math.Between(JUMPER_COOLDOWN_MIN_MS, JUMPER_COOLDOWN_MAX_MS);
     enemy.jumpTimerMs = 0;
     enemy.jumpVelY = JUMPER_JUMP_VEL_Y;
   }
   
-  // Start movement with velocity
   enemy.body.setVelocityX(enemy.dir * enemy.speed);
   enemy.body.setVelocityY(0);
   
@@ -1245,232 +1020,96 @@ function spawnEnemy(scene, platform) {
 }
 
 function updateEnemies(scene, deltaMs) {
-  // Move enemies within their platform range - PURE velocity based, NO manual position changes
   enemiesGroup.getChildren().forEach(e => {
     if (!e.active || !e.body) return;
-    
     const isJumper = e.type === 'jumper';
+    if (!isJumper && e.body.velocity.y !== 0) e.body.setVelocityY(0);
+    if (Math.abs(e.body.velocity.x) < 5) e.body.setVelocityX(e.dir * e.speed);
+    if (e.x <= e.minX && e.body.velocity.x < 0) { e.dir = 1; e.body.setVelocityX(e.dir * e.speed); }
+    else if (e.x >= e.maxX && e.body.velocity.x > 0) { e.dir = -1; e.body.setVelocityX(e.dir * e.speed); }
 
-    // Walkers: keep Y velocity at 0 (walkers stick to platforms)
-    if (!isJumper && e.body.velocity.y !== 0) {
-      e.body.setVelocityY(0);
-    }
-    
-    // Ensure enemy is always moving (restore velocity if lost due to collisions)
-    if (Math.abs(e.body.velocity.x) < 5) {
-      e.body.setVelocityX(e.dir * e.speed);
-    }
-    
-    // Boundary checks using center position - ONLY change velocity, NEVER touch position
-    if (e.x <= e.minX && e.body.velocity.x < 0) { 
-      e.dir = 1; 
-      e.body.setVelocityX(e.dir * e.speed);
-    }
-    else if (e.x >= e.maxX && e.body.velocity.x > 0) { 
-      e.dir = -1; 
-      e.body.setVelocityX(e.dir * e.speed);
-    }
-
-    // ===== Jumper behavior =====
     if (isJumper) {
-      // Accumulate timer; if on ground and cooldown met, jump
       e.jumpTimerMs = (e.jumpTimerMs || 0) + (deltaMs || 0);
       if (e.body.blocked && e.body.blocked.down && e.jumpTimerMs >= (e.jumpCooldownMs || JUMPER_COOLDOWN_MIN_MS)) {
         e.body.setVelocityY(e.jumpVelY || JUMPER_JUMP_VEL_Y);
         e.jumpTimerMs = 0;
-        // Micro visual feedback on jump
-        scene.tweens.add({
-          targets: e,
-          scaleY: { from: 0.9, to: 1 },
-          duration: 120,
-          ease: 'Quad.easeOut'
-        });
+        scene.tweens.add({ targets: e, scaleY: { from: 0.9, to: 1 }, duration: 120, ease: 'Quad.easeOut' });
       }
     }
   });
-  // Clean up destroyed enemies from platform lists
   platforms.forEach(p => {
-    if (p.enemies) {
-      p.enemies = p.enemies.filter(e => e.active);
-    }
+    if (p.enemies) p.enemies = p.enemies.filter(e => e.active);
   });
 }
 
 function onBulletHitsEnemy(scene, bullet, enemy) {
-  // Manejar balas con pierce (charged bullets)
   if (bullet && bullet.isCharged && bullet.pierceCount > 0) {
     bullet.pierceCount--;
-    // Solo destruir si pierceCount agotado
-    if (bullet.pierceCount <= 0 && bullet.destroy) {
-      bullet.destroy();
-    }
+    if (bullet.pierceCount <= 0 && bullet.destroy) { bullet.destroy(); }
   } else {
-    // Balas normales se destruyen inmediatamente
     if (bullet && bullet.destroy) bullet.destroy();
   }
   
   if (enemy && enemy.active) {
-    // Particle burst effect on enemy death
     for (let i = 0; i < 8; i++) {
       const angle = (i / 8) * Math.PI * 2;
       const particle = scene.add.rectangle(enemy.x, enemy.y, 4, 4, 0xff6666);
       scene.physics.add.existing(particle);
-      particle.body.setVelocity(
-        Math.cos(angle) * 150,
-        Math.sin(angle) * 150
-      );
+      particle.body.setVelocity(Math.cos(angle) * 150, Math.sin(angle) * 150);
       particle.body.setGravity(0, 300);
-      scene.tweens.add({
-        targets: particle,
-        alpha: 0,
-        scale: 0,
-        duration: 500,
-        onComplete: () => particle.destroy()
-      });
+      scene.tweens.add({ targets: particle, alpha: 0, scale: 0, duration: 500, onComplete: () => particle.destroy() });
     }
     
-    // Remove from platform list
     const p = enemy.platformRef;
     if (p && p.enemies) p.enemies = p.enemies.filter(x => x !== enemy);
     
-    // Check if airborne kill (combo system)
     const isAirborne = player && player.body && !player.body.blocked.down;
-    
     let earnedScore = 50;
-    
     if (isAirborne) {
-      // Airborne kill: increment combo
       const isFirstCombo = comboCount === 0;
       comboCount++;
-      comboMultiplier = 1 + (comboCount * 0.5); // +50% per kill in combo
-      
-      // First combo kill: grant maxAmmo bullets, subsequent: +1
-      if (isFirstCombo) {
-        ammo = maxAmmo; // Start combo with full reload!
-      } else {
-        ammo++; // Blue bullet (can exceed maxAmmo)
-      }
-      
-      // Update combo display with scaling effects
+      comboMultiplier = 1 + (comboCount * 0.5);
+      if (isFirstCombo) { ammo = maxAmmo; } else { ammo++; }
       if (comboText) {
         comboText.setText('COMBO x' + comboMultiplier.toFixed(1) + ' (' + comboCount + ')');
-        // Scale combo text based on level
-        const scale = 1 + (comboCount * 0.1);
-        comboText.setScale(Math.min(scale, 2));
+        const scale = 1 + (comboCount * 0.1); comboText.setScale(Math.min(scale, 2));
       }
-      
-      // Award score with multiplier
       earnedScore = Math.floor(50 * comboMultiplier);
       score += earnedScore;
-      
-      // Progressive visual feedback based on combo level
-      let textColor = '#00ffff';
-      let textSize = 18;
-      let strokeThickness = 3;
-      let shakeIntensity = 0.005;
-      let comboMessage = '';
-      
-      if (comboCount >= 10) {
-        textColor = '#ff00ff'; // Magenta for godlike
-        textSize = 28;
-        strokeThickness = 5;
-        shakeIntensity = 0.02;
-        comboMessage = 'GODLIKE!';
-      } else if (comboCount >= 7) {
-        textColor = '#ff0080'; // Pink for insane
-        textSize = 24;
-        strokeThickness = 4;
-        shakeIntensity = 0.015;
-        comboMessage = 'INSANE!';
-      } else if (comboCount >= 5) {
-        textColor = '#ff4400'; // Orange for amazing
-        textSize = 22;
-        strokeThickness = 4;
-        shakeIntensity = 0.012;
-        comboMessage = 'AMAZING!';
-      } else if (comboCount >= 3) {
-        textColor = '#ffff00'; // Yellow for great
-        textSize = 20;
-        strokeThickness = 3;
-        shakeIntensity = 0.008;
-        comboMessage = 'GREAT!';
-      } else if (isFirstCombo) {
-        comboMessage = 'COMBO START!';
-      }
-      
-      // Visual feedback: floating score with combo
+      let textColor = '#00ffff', textSize = 18, strokeThickness = 3, shakeIntensity = 0.005, comboMessage = '';
+      if (comboCount >= 10) { textColor = '#ff00ff'; textSize = 28; strokeThickness = 5; shakeIntensity = 0.02; comboMessage = 'GODLIKE!'; }
+      else if (comboCount >= 7) { textColor = '#ff0080'; textSize = 24; strokeThickness = 4; shakeIntensity = 0.015; comboMessage = 'INSANE!'; }
+      else if (comboCount >= 5) { textColor = '#ff4400'; textSize = 22; strokeThickness = 4; shakeIntensity = 0.012; comboMessage = 'AMAZING!'; }
+      else if (comboCount >= 3) { textColor = '#ffff00'; textSize = 20; strokeThickness = 3; shakeIntensity = 0.008; comboMessage = 'GREAT!'; }
+      else if (isFirstCombo) { comboMessage = 'COMBO START!'; }
       const t = scene.add.text(enemy.x, enemy.y - 10, '+' + earnedScore, {
         fontSize: textSize + 'px', fontFamily: 'Arial, sans-serif', color: textColor, stroke: '#000000', strokeThickness: strokeThickness
       }).setOrigin(0.5);
-      scene.tweens.add({ 
-        targets: t, 
-        y: t.y - 30, 
-        scale: { from: 0.5, to: 1.2 },
-        alpha: 0, 
-        duration: 700, 
-        ease: 'Back.easeOut',
-        onComplete: () => t.destroy() 
-      });
-      
-      // Show combo message
+      scene.tweens.add({ targets: t, y: t.y - 30, scale: { from: 0.5, to: 1.2 }, alpha: 0, duration: 700, ease: 'Back.easeOut', onComplete: () => t.destroy() });
       if (comboMessage) {
         const msg = scene.add.text(enemy.x, enemy.y - 35, comboMessage, {
           fontSize: (textSize + 4) + 'px', fontFamily: 'Arial, sans-serif', color: textColor, stroke: '#ffffff', strokeThickness: 2
         }).setOrigin(0.5);
-        scene.tweens.add({ 
-          targets: msg, 
-          y: msg.y - 40, 
-          scale: { from: 1.5, to: 0.8 },
-          alpha: { from: 1, to: 0 }, 
-          duration: 1000, 
-          ease: 'Power2',
-          onComplete: () => msg.destroy() 
-        });
+        scene.tweens.add({ targets: msg, y: msg.y - 40, scale: { from: 1.5, to: 0.8 }, alpha: { from: 1, to: 0 }, duration: 1000, ease: 'Power2', onComplete: () => msg.destroy() });
       }
-      
-      // Camera shake with increasing intensity
-      if (scene.cameras && scene.cameras.main) {
-        scene.cameras.main.shake(200, shakeIntensity);
-      }
-      
-      // Update ammo display with blue color and scale
+      if (scene.cameras && scene.cameras.main) scene.cameras.main.shake(200, shakeIntensity);
       if (scene.ammoText) {
         scene.ammoText.setText('Ammo: ' + ammo);
-        scene.ammoText.setColor(textColor); // Match combo color
-        // Pulse effect on ammo text
-        scene.tweens.add({
-          targets: scene.ammoText,
-          scale: { from: 1, to: 1.3 },
-          duration: 150,
-          yoyo: true,
-          ease: 'Quad.easeOut'
-        });
+        scene.ammoText.setColor(textColor);
+        scene.tweens.add({ targets: scene.ammoText, scale: { from: 1, to: 1.3 }, duration: 150, yoyo: true, ease: 'Quad.easeOut' });
       }
-      
-      // Play combo sound with increasing pitch
       const pitchMultiplier = 1 + (comboCount * 0.1);
       playTone(scene, 660 * pitchMultiplier, 0.08);
     } else {
-      // Grounded kill: normal behavior
       score += earnedScore;
-      ammo = Math.min(maxAmmo, ammo + 1); // Regular ammo (clamped)
-      
-      // Visual feedback: floating +50
+      ammo = Math.min(maxAmmo, ammo + 1);
       const t = scene.add.text(enemy.x, enemy.y - 10, '+50', {
         fontSize: '16px', fontFamily: 'Arial, sans-serif', color: '#ffdd55', stroke: '#000000', strokeThickness: 2
       }).setOrigin(0.5);
       scene.tweens.add({ targets: t, y: t.y - 20, alpha: 0, duration: 500, onComplete: () => t.destroy() });
-      
-      // Update ammo display with yellow color
-      if (scene.ammoText) {
-        scene.ammoText.setText('Ammo: ' + ammo);
-        scene.ammoText.setColor('#ffff00'); // Yellow for normal ammo
-      }
-      
-      // Sound feedback for grounded kill
+      if (scene.ammoText) { scene.ammoText.setText('Ammo: ' + ammo); scene.ammoText.setColor('#ffff00'); }
       playTone(scene, 660, 0.08);
     }
-    
     if (scoreText) scoreText.setText('Score: ' + score);
     enemy.destroy();
   }
@@ -1478,30 +1117,22 @@ function onBulletHitsEnemy(scene, bullet, enemy) {
 
 // ===== Charge Shot helpers =====
 function startCharging(scene) {
-  if (isCharging) return; // ya está cargando
-  
+  if (isCharging) return;
   isCharging = true;
   chargeStartTime = scene.time.now;
-  
-  // Aplicar slow-motion inmediatamente
-  // NOTA: En Phaser, timeScale funciona como DIVISOR del delta time
-  // Valores MAYORES a 1.0 = más lento (ej: 3.33 ≈ 30% velocidad)
-  // Valores MENORES a 1.0 = más rápido
+  chargeAudioCompleted = false;
+
+  // Slow-mo global
   if (scene.physics && scene.physics.world) {
     scene.physics.world.timeScale = CHARGE_SLOWMO_SCALE;
   }
   
-  // Guardar referencia al tween para cleanup (aunque ya no lo usamos para el ramp)
-  slowMoTween = null;
-  
-  // Visuales de canalización: anillos amarillos pulsantes alrededor del jugador (Ray Gun)
+  // Visuales de canalización
   if (!chargeVisuals) {
     chargeVisuals = scene.add.graphics();
     chargeVisuals.setDepth(999);
     chargeVisuals.setScrollFactor(1);
   }
-  
-  // Animación de anillos
   scene.tweens.add({
     targets: chargeVisuals,
     alpha: { from: 0.8, to: 0.3 },
@@ -1510,25 +1141,16 @@ function startCharging(scene) {
     repeat: -1,
     ease: 'Sine.easeInOut'
   });
-  
-  // Audio feedback: tono continuo modulado
-  let frequency = 440;
-  const freqStep = 10;
-  chargeToneInterval = setInterval(() => {
-    if (isCharging) {
-      playTone(scene, frequency, 0.08);
-      frequency += freqStep;
-      if (frequency > 600) frequency = 440;
-    }
-  }, 150);
+
+  // AUDIO dinámico
+  startChargeAudio(scene);
 }
 
 function stopCharging(scene, fired = false) {
   if (!isCharging) return;
-  
   isCharging = false;
-  
-  // Restaurar velocidad normal inmediatamente
+
+  // Restaurar velocidad normal
   if (scene.physics && scene.physics.world) {
     scene.physics.world.timeScale = 1.0;
   }
@@ -1543,162 +1165,87 @@ function stopCharging(scene, fired = false) {
   }
   
   // Detener audio
-  if (chargeToneInterval) {
-    clearInterval(chargeToneInterval);
-    chargeToneInterval = null;
-  }
-  
-  // Si se disparó, mostrar efectos de liberación
+  stopChargeAudio(scene);
+  chargeAudioCompleted = false;
+
+  // Efectos de liberación si disparó
   if (fired) {
-    // Flash ring amarillo desde el jugador (Ray Gun)
     const ring = scene.add.circle(player.x, player.y, 10, 0xEEF527, 0.7);
     ring.setDepth(1000);
-    scene.tweens.add({
-      targets: ring,
-      scale: 4,
-      alpha: 0,
-      duration: 250,
-      ease: 'Quad.easeOut',
-      onComplete: () => ring.destroy()
-    });
-    
-    // Partículas amarillas
+    scene.tweens.add({ targets: ring, scale: 4, alpha: 0, duration: 250, ease: 'Quad.easeOut', onComplete: () => ring.destroy() });
     for (let i = 0; i < 8; i++) {
       const angle = (i / 8) * Math.PI * 2;
-      const particle = scene.add.rectangle(player.x, player.y, 4, 4, 0xEEF527);
-      particle.setDepth(1000);
-      scene.physics.add.existing(particle);
-      particle.body.setVelocity(
-        Math.cos(angle) * 200,
-        Math.sin(angle) * 200
-      );
-      particle.body.setGravity(0, 0);
-      scene.tweens.add({
-        targets: particle,
-        alpha: 0,
-        scale: 0,
-        duration: 300,
-        onComplete: () => particle.destroy()
-      });
+      const p = scene.add.rectangle(player.x, player.y, 4, 4, 0xEEF527);
+      p.setDepth(1000);
+      scene.physics.add.existing(p);
+      p.body.setVelocity(Math.cos(angle) * 200, Math.sin(angle) * 200);
+      p.body.setGravity(0, 0);
+      scene.tweens.add({ targets: p, alpha: 0, scale: 0, duration: 300, onComplete: () => p.destroy() });
     }
-    
-    // Camera shake más intenso para Ray Gun
     scene.cameras.main.shake(150, 0.006);
-    
-    // Audio: tono de liberación (pitch alto)
     playTone(scene, 1000, 0.12);
   }
 }
 
 function fireChargedBullet(scene) {
   // ===== RAY GUN: Rayo instantáneo hacia abajo =====
-  const rayColor = 0xEEF527;      // Amarillo brillante
+  const rayColor = 0xEEF527;
   const rayStart = { x: player.x, y: player.y + 12 };
   const rayEnd = { x: player.x, y: player.y + CHARGE_RAY_MAX_DISTANCE };
   
-  console.log('🔫 RAY GUN DISPARADO desde:', rayStart.y, 'hasta:', rayEnd.y);
-  
-  // Dibujar el rayo visual
+  const CHARGE_RAY_WIDTH_OUTER = 40;
+  const CHARGE_RAY_WIDTH_MID   = 20;
+  const CHARGE_RAY_WIDTH_CORE  = 10;
+
   const rayGraphics = scene.add.graphics();
   rayGraphics.setDepth(1500);
+  rayGraphics.lineStyle(CHARGE_RAY_WIDTH_OUTER, rayColor, 0.3); rayGraphics.lineBetween(rayStart.x, rayStart.y, rayEnd.x, rayEnd.y);
+  rayGraphics.lineStyle(CHARGE_RAY_WIDTH_MID, rayColor, 0.7); rayGraphics.lineBetween(rayStart.x, rayStart.y, rayEnd.x, rayEnd.y);
+  rayGraphics.lineStyle(CHARGE_RAY_WIDTH_CORE, 0xFFFFFF, 1.0); rayGraphics.lineBetween(rayStart.x, rayStart.y, rayEnd.x, rayEnd.y);
+  scene.tweens.add({ targets: rayGraphics, alpha: 0, duration: CHARGE_RAY_VISUAL_DURATION, ease: 'Quad.easeOut', onComplete: () => rayGraphics.destroy() });
   
-  // Rayo grueso con glow
-  rayGraphics.lineStyle(8, rayColor, 0.3);
-  rayGraphics.lineBetween(rayStart.x, rayStart.y, rayEnd.x, rayEnd.y);
-  rayGraphics.lineStyle(4, rayColor, 0.7);
-  rayGraphics.lineBetween(rayStart.x, rayStart.y, rayEnd.x, rayEnd.y);
-  rayGraphics.lineStyle(2, 0xFFFFFF, 1.0);
-  rayGraphics.lineBetween(rayStart.x, rayStart.y, rayEnd.x, rayEnd.y);
-  
-  // El rayo se desvanece después de un tiempo
-  scene.tweens.add({
-    targets: rayGraphics,
-    alpha: 0,
-    duration: CHARGE_RAY_VISUAL_DURATION,
-    ease: 'Quad.easeOut',
-    onComplete: () => rayGraphics.destroy()
-  });
-  
-  // Detectar todos los enemigos que están en el camino del rayo
+  // Detectar enemigos debajo alineados con el rayo
   const hitEnemies = [];
   if (enemiesGroup && enemiesGroup.children) {
     enemiesGroup.children.entries.forEach(enemy => {
       if (!enemy.active) return;
-      
-      // Verificar si el enemigo está en la línea del rayo (±10px de tolerancia horizontal)
       const horizontalDist = Math.abs(enemy.x - player.x);
-      if (horizontalDist <= 20) {
-        // Y el enemigo está debajo del jugador
-        if (enemy.y > player.y) {
-          const distanceFromPlayer = enemy.y - player.y;
-          hitEnemies.push({ enemy, distance: distanceFromPlayer });
-        }
+      if (horizontalDist <= 20 && enemy.y > player.y) {
+        const distanceFromPlayer = enemy.y - player.y;
+        hitEnemies.push({ enemy, distance: distanceFromPlayer });
       }
     });
   }
-  
-  // Ordenar por distancia (más cercano primero)
   hitEnemies.sort((a, b) => a.distance - b.distance);
-  
-  // Aplicar daño a los primeros N enemigos (pierce)
   const maxHits = CHARGE_PIERCE_COUNT;
   const actualHits = Math.min(hitEnemies.length, maxHits);
-  
-  console.log('Enemigos en camino del rayo:', hitEnemies.length, '/ Hits aplicados:', actualHits);
-  
   for (let i = 0; i < actualHits; i++) {
-    const { enemy, distance } = hitEnemies[i];
-    
-    // Efecto visual en el punto de impacto
+    const { enemy } = hitEnemies[i];
     const impactFlash = scene.add.circle(enemy.x, enemy.y, 12, rayColor, 0.8);
     impactFlash.setDepth(1600);
-    scene.tweens.add({
-      targets: impactFlash,
-      scale: 2.5,
-      alpha: 0,
-      duration: 250,
-      ease: 'Power2',
-      onComplete: () => impactFlash.destroy()
-    });
-    
-    // Partículas en el impacto
+    scene.tweens.add({ targets: impactFlash, scale: 2.5, alpha: 0, duration: 250, ease: 'Power2', onComplete: () => impactFlash.destroy() });
     for (let j = 0; j < 6; j++) {
       const angle = (j / 6) * Math.PI * 2;
       const p = scene.add.rectangle(enemy.x, enemy.y, 3, 3, rayColor);
       p.setDepth(1600);
       scene.physics.add.existing(p);
-      p.body.setVelocity(
-        Math.cos(angle) * 150,
-        Math.sin(angle) * 150
-      );
+      p.body.setVelocity(Math.cos(angle) * 150, Math.sin(angle) * 150);
       p.body.setGravity(0, 0);
-      scene.tweens.add({
-        targets: p,
-        alpha: 0,
-        scale: 0,
-        duration: 300,
-        onComplete: () => p.destroy()
-      });
+      scene.tweens.add({ targets: p, alpha: 0, scale: 0, duration: 300, onComplete: () => p.destroy() });
     }
-    
-    // Matar al enemigo (reutilizar lógica existente)
     onBulletHitsEnemy(scene, { isCharged: true, pierceCount: 999 }, enemy);
   }
   
-  // Consumir munición
+  // Munición y recoil
   ammo -= CHARGE_COST_AMMO;
   if (scene.ammoText) {
     scene.ammoText.setText('Ammo: ' + ammo);
     scene.ammoText.setColor(comboCount > 0 ? '#00ffff' : '#ffff00');
   }
-  
-  // Recoil suave
   if (player && player.body) {
     const recoilY = recoil * 0.5;
     player.body.setVelocityY(Math.min(player.body.velocity.y - recoilY, -recoilY));
   }
-  
-  // Sonido más potente para el ray gun
   playTone(scene, 1200, 0.15);
 }
 
@@ -1706,12 +1253,10 @@ function fireChargedBullet(scene) {
 function drawHitboxes(scene) {
   if (!debugGraphics) return;
   debugGraphics.clear();
-  // Player
   if (player && player.body) {
     debugGraphics.lineStyle(1, 0x00ff00, 1);
     debugGraphics.strokeRect(player.body.x, player.body.y, player.body.width, player.body.height);
   }
-  // Enemies
   if (enemiesGroup) {
     enemiesGroup.getChildren().forEach(e => {
       if (e.body) {
@@ -1720,7 +1265,6 @@ function drawHitboxes(scene) {
       }
     });
   }
-  // Bullets
   if (bulletsGroup) {
     bulletsGroup.getChildren().forEach(b => {
       if (b.body) {
@@ -1734,12 +1278,10 @@ function drawHitboxes(scene) {
 // ===== Side hazard helpers =====
 function setupHazards(scene) {
   const cam = scene.cameras.main;
-  // Left wall
   leftHazard = scene.add.rectangle(6, cam.scrollY + 300, 12, 640, 0xff2222, hazardOn ? 0.6 : 0.12);
   scene.physics.add.existing(leftHazard, true);
   hazardsGroup.add(leftHazard);
   if (leftHazard.body && leftHazard.body.updateFromGameObject) leftHazard.body.updateFromGameObject();
-  // Right wall
   rightHazard = scene.add.rectangle(794, cam.scrollY + 300, 12, 640, 0xff2222, hazardOn ? 0.6 : 0.12);
   scene.physics.add.existing(rightHazard, true);
   hazardsGroup.add(rightHazard);
@@ -1748,14 +1290,8 @@ function setupHazards(scene) {
 
 function updateHazards(scene) {
   const cam = scene.cameras.main;
-  if (leftHazard) {
-    leftHazard.y = cam.scrollY + 300;
-    if (leftHazard.body && leftHazard.body.updateFromGameObject) leftHazard.body.updateFromGameObject();
-  }
-  if (rightHazard) {
-    rightHazard.y = cam.scrollY + 300;
-    if (rightHazard.body && rightHazard.body.updateFromGameObject) rightHazard.body.updateFromGameObject();
-  }
+  if (leftHazard) { leftHazard.y = cam.scrollY + 300; if (leftHazard.body && leftHazard.body.updateFromGameObject) leftHazard.body.updateFromGameObject(); }
+  if (rightHazard) { rightHazard.y = cam.scrollY + 300; if (rightHazard.body && rightHazard.body.updateFromGameObject) rightHazard.body.updateFromGameObject(); }
 }
 
 function setHazardVisual(_scene) {
@@ -1782,99 +1318,101 @@ function playTone(scene, frequency, duration) {
   oscillator.stop(audioContext.currentTime + duration);
 }
 
-// MUSIC
+// MUSIC (opcional)
 function playBackgroundMusic(scene) {
   const audioContext = scene.sound.context;
-  
-  // Music parameters (easy to modify)
-  const tempo = 120; // BPM
-  const beatDuration = 60 / tempo; // Duration of one beat in seconds
-  const loopBars = 4; // Number of bars in the loop
-  const loopDuration = beatDuration * 4 * loopBars; // 4 beats per bar
-  
-  // Funky bass line pattern (note frequencies in Hz)
+  const tempo = 120;
+  const beatDuration = 60 / tempo;
+  const loopBars = 4;
+  const loopDuration = beatDuration * 4 * loopBars;
   const bassPattern = [
-    { note: 110, start: 0, duration: 0.15 },      // A2
-    { note: 110, start: 0.5, duration: 0.1 },     // A2
-    { note: 146.83, start: 1, duration: 0.15 },   // D3
-    { note: 110, start: 1.75, duration: 0.1 },    // A2
-    { note: 123.47, start: 2.5, duration: 0.15 }, // B2
-    { note: 110, start: 3.25, duration: 0.1 },    // A2
-    { note: 146.83, start: 4, duration: 0.2 },    // D3
-    { note: 123.47, start: 4.75, duration: 0.1 }, // B2
-    { note: 98, start: 5.5, duration: 0.15 },     // G2
-    { note: 110, start: 6.25, duration: 0.1 },    // A2
-    { note: 146.83, start: 7, duration: 0.2 },    // D3
-    { note: 110, start: 7.75, duration: 0.1 }     // A2
+    { note: 110, start: 0, duration: 0.15 }, { note: 110, start: 0.5, duration: 0.1 },
+    { note: 146.83, start: 1, duration: 0.15 }, { note: 110, start: 1.75, duration: 0.1 },
+    { note: 123.47, start: 2.5, duration: 0.15 }, { note: 110, start: 3.25, duration: 0.1 },
+    { note: 146.83, start: 4, duration: 0.2 }, { note: 123.47, start: 4.75, duration: 0.1 },
+    { note: 98, start: 5.5, duration: 0.15 }, { note: 110, start: 6.25, duration: 0.1 },
+    { note: 146.83, start: 7, duration: 0.2 }, { note: 110, start: 7.75, duration: 0.1 }
   ];
-  
-  // Melody pattern (higher notes)
   const melodyPattern = [
-    { note: 440, start: 0.25, duration: 0.1 },    // A4
-    { note: 493.88, start: 1.25, duration: 0.1 }, // B4
-    { note: 587.33, start: 2.25, duration: 0.15 },// D5
-    { note: 493.88, start: 3, duration: 0.1 },    // B4
-    { note: 523.25, start: 4.25, duration: 0.1 }, // C5
-    { note: 587.33, start: 5.25, duration: 0.15 },// D5
-    { note: 659.25, start: 6.5, duration: 0.2 },  // E5
-    { note: 587.33, start: 7.25, duration: 0.1 }  // D5
+    { note: 440, start: 0.25, duration: 0.1 }, { note: 493.88, start: 1.25, duration: 0.1 },
+    { note: 587.33, start: 2.25, duration: 0.15 },{ note: 493.88, start: 3, duration: 0.1 },
+    { note: 523.25, start: 4.25, duration: 0.1 }, { note: 587.33, start: 5.25, duration: 0.15 },
+    { note: 659.25, start: 6.5, duration: 0.2 },  { note: 587.33, start: 7.25, duration: 0.1 }
   ];
-  
   function scheduleLoop(startTime) {
-    // Schedule bass notes
     bassPattern.forEach(({ note, start, duration }) => {
-      const osc = audioContext.createOscillator();
-      const gain = audioContext.createGain();
-      
-      osc.connect(gain);
-      gain.connect(audioContext.destination);
-      
-      osc.type = 'sawtooth';
-      osc.frequency.value = note;
-      
-      const noteStart = startTime + start * beatDuration;
-      const noteEnd = noteStart + duration;
-      
-      gain.gain.setValueAtTime(0.08, noteStart);
-      gain.gain.exponentialRampToValueAtTime(0.01, noteEnd);
-      
-      osc.start(noteStart);
-      osc.stop(noteEnd);
+      const osc = audioContext.createOscillator(); const gain = audioContext.createGain();
+      osc.connect(gain); gain.connect(audioContext.destination);
+      osc.type = 'sawtooth'; osc.frequency.value = note;
+      const noteStart = startTime + start * beatDuration; const noteEnd = noteStart + duration;
+      gain.gain.setValueAtTime(0.08, noteStart); gain.gain.exponentialRampToValueAtTime(0.01, noteEnd);
+      osc.start(noteStart); osc.stop(noteEnd);
     });
-    
-    // Schedule melody notes
     melodyPattern.forEach(({ note, start, duration }) => {
-      const osc = audioContext.createOscillator();
-      const gain = audioContext.createGain();
-      
-      osc.connect(gain);
-      gain.connect(audioContext.destination);
-      
-      osc.type = 'square';
-      osc.frequency.value = note;
-      
-      const noteStart = startTime + start * beatDuration;
-      const noteEnd = noteStart + duration;
-      
-      gain.gain.setValueAtTime(0.04, noteStart);
-      gain.gain.exponentialRampToValueAtTime(0.01, noteEnd);
-      
-      osc.start(noteStart);
-      osc.stop(noteEnd);
+      const osc = audioContext.createOscillator(); const gain = audioContext.createGain();
+      osc.connect(gain); gain.connect(audioContext.destination);
+      osc.type = 'square'; osc.frequency.value = note;
+      const noteStart = startTime + start * beatDuration; const noteEnd = noteStart + duration;
+      gain.gain.setValueAtTime(0.04, noteStart); gain.gain.exponentialRampToValueAtTime(0.01, noteEnd);
+      osc.start(noteStart); osc.stop(noteEnd);
     });
-    
-    // Schedule next loop immediately for seamless playback
     const nextLoopTime = startTime + loopDuration;
     if (!gameOver && nextLoopTime < audioContext.currentTime + 10) {
       scheduleLoop(nextLoopTime);
     } else {
-      // Check later if we should continue
-      setTimeout(() => {
-        if (!gameOver) scheduleLoop(audioContext.currentTime);
-      }, (loopDuration - 0.5) * 1000);
+      setTimeout(() => { if (!gameOver) scheduleLoop(audioContext.currentTime); }, (loopDuration - 0.5) * 1000);
     }
   }
-  
-  // Start the music loop
   scheduleLoop(audioContext.currentTime);
+}
+
+/* =========================
+   AUDIO DINÁMICO DE CARGA
+   ========================= */
+function startChargeAudio(scene) {
+  stopChargeAudio(scene); // por seguridad
+  const ac = scene.sound.context;
+  chargeOsc = ac.createOscillator();
+  chargeGain = ac.createGain();
+  chargeOsc.type = 'sine'; // puedes cambiar a 'square' si prefieres
+  chargeOsc.frequency.value = CHARGE_AUDIO_MIN_HZ;
+  chargeGain.gain.setValueAtTime(0.02, ac.currentTime);
+  chargeOsc.connect(chargeGain);
+  chargeGain.connect(ac.destination);
+  chargeOsc.start();
+}
+
+function stopChargeAudio(scene) {
+  const ac = scene?.sound?.context;
+  const now = ac?.currentTime ?? 0;
+  try {
+    if (chargeGain && ac) {
+      chargeGain.gain.cancelScheduledValues(now);
+      chargeGain.gain.setValueAtTime(chargeGain.gain.value ?? 0.02, now);
+      chargeGain.gain.linearRampToValueAtTime(0.0001, now + 0.03);
+    }
+    if (chargeOsc) chargeOsc.stop(now + 0.03);
+  } catch (_) {}
+  try { if (chargeOsc) chargeOsc.disconnect(); } catch (_) {}
+  try { if (chargeGain) chargeGain.disconnect(); } catch (_) {}
+  chargeOsc = null;
+  chargeGain = null;
+}
+
+function updateChargeAudio(scene) {
+  if (!chargeOsc || !scene) return;
+  const threshold = Math.max(1, CHARGE_THRESHOLD_MS);
+  const elapsed = scene.time.now - chargeStartTime;
+  const rawProgress = elapsed / threshold;
+  const progress = Phaser.Math.Clamp(rawProgress, 0, 1);
+  const t = progress; // lineal; puedes cambiar a ease-in/out
+  const freq = CHARGE_AUDIO_MIN_HZ + (CHARGE_AUDIO_MAX_HZ - CHARGE_AUDIO_MIN_HZ) * t;
+  const ac = scene.sound.context;
+  chargeOsc.frequency.setValueAtTime(freq, ac.currentTime);
+  if (!chargeAudioCompleted && progress >= 1) {
+    chargeAudioCompleted = true;
+    stopChargeAudio(scene); // silencio al completar carga
+    // Si quieres un ping de "ready", descomenta:
+    // playTone(scene, 750, 0.06);
+  }
 }
