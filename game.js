@@ -44,6 +44,11 @@ let currentShootKey = 'e';
 let currentRayKey = 'i';
 let selectedMode = 'challenger'; // 'normal' or 'challenger'
 
+// Failsafe global state (hold P1A+P1B for N ms)
+let fsPrimaryDown = false;
+let fsSecondaryDown = false;
+let failsafeStartTime = 0;
+
 // ======================= MENU SCENE ==========================
 function menuCreate() {
   const s = this;
@@ -53,6 +58,8 @@ function menuCreate() {
   s.instructionsVisible = false;
   s.controlsVisible = false;
   s.modeVisible = false;
+  // Reset failsafe on entering menu
+  fsPrimaryDown = false; fsSecondaryDown = false; failsafeStartTime = 0;
 
   // Stylish animated title
   const titleText = s.add.text(400, 130, 'CHAINFALL', {
@@ -237,9 +244,40 @@ function menuCreate() {
       actions[s.menuIndex]();
     }
   });
+  // Failsafe key tracking (menu scene)
+  s.input.keyboard.on('keydown', (ev) => {
+    const key = KEYBOARD_TO_ARCADE[ev.key] || ev.key;
+    if (key === 'P1A') fsPrimaryDown = true;
+    if (key === 'P1B') fsSecondaryDown = true;
+    if (fsPrimaryDown && fsSecondaryDown && failsafeStartTime === 0) failsafeStartTime = s.time.now;
+  });
+  s.input.keyboard.on('keyup', (ev) => {
+    const key = KEYBOARD_TO_ARCADE[ev.key] || ev.key;
+    if (key === 'P1A') fsPrimaryDown = false;
+    if (key === 'P1B') fsSecondaryDown = false;
+    if (!fsPrimaryDown || !fsSecondaryDown) failsafeStartTime = 0;
+  });
 }
 
-function menuUpdate() {}
+function menuUpdate() { checkFailsafe(this); }
+
+// ===== Failsafe: hold primary+secondary for N ms to return to menu =====
+function checkFailsafe(scene) {
+  if (!scene || !scene.time) return;
+  if (fsPrimaryDown && fsSecondaryDown) {
+    if (failsafeStartTime === 0) failsafeStartTime = scene.time.now;
+    const elapsed = scene.time.now - failsafeStartTime;
+    if (elapsed >= FAILSAFE_HOLD_MS) {
+      fsPrimaryDown = false;
+      fsSecondaryDown = false;
+      failsafeStartTime = 0;
+      if (scene.scene && scene.scene.start) scene.scene.start('menu');
+    }
+  } else {
+    // reset timer if any of the keys is up
+    failsafeStartTime = 0;
+  }
+}
 
 function updateMenuVisuals(s) {
   s.menuItems.forEach((t, i) => {
@@ -559,6 +597,7 @@ const SHIELDED_SPAWN_CHANCE = 0.08;
 const POWERUP_SPAWN_CHANCE = 0.20;
 const POWERUP_MAX_ACTIVE = 2;
 const INVULNERABILITY_DURATION_MS = 1500;
+const FAILSAFE_HOLD_MS = 5000; // hold P1A+P1B for 5s to return to menu
 
 // ===== Enemy bullets (UPWARD TRAJECTORY) =====
 const ENEMY_BULLET_SPEED_Y = -360;
@@ -632,6 +671,8 @@ function create(data) {
   jetpackRightBlock = null;
   isInvulnerable = false;
   invulnerabilityEndTime = 0;
+  // Reset failsafe in game scene
+  fsPrimaryDown = false; fsSecondaryDown = false; failsafeStartTime = 0;
 
   // ===== Downwell-like setup =====
   if (this.physics && this.physics.world) {
@@ -689,6 +730,20 @@ function create(data) {
         endGame(this);
       }
     }
+  });
+
+  // Failsafe key tracking (game scene)
+  this.input.keyboard.on('keydown', (ev) => {
+    const key = KEYBOARD_TO_ARCADE[ev.key] || ev.key;
+    if (key === 'P1A') fsPrimaryDown = true;
+    if (key === 'P1B') fsSecondaryDown = true;
+    if (fsPrimaryDown && fsSecondaryDown && failsafeStartTime === 0) failsafeStartTime = scene.time.now;
+  });
+  this.input.keyboard.on('keyup', (ev) => {
+    const key = KEYBOARD_TO_ARCADE[ev.key] || ev.key;
+    if (key === 'P1A') fsPrimaryDown = false;
+    if (key === 'P1B') fsSecondaryDown = false;
+    if (!fsPrimaryDown || !fsSecondaryDown) failsafeStartTime = 0;
   });
   this.physics.add.collider(enemyBulletsGroup, platformsGroup, (b) => { if (b && b.destroy) b.destroy(); });
   this.physics.add.collider(enemiesGroup, platformsGroup);
@@ -816,6 +871,7 @@ function create(data) {
 }
 
 function update(_time, _delta) {
+  checkFailsafe(this);
   if (gameOver) return;
 
   // Horizontal control
