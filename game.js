@@ -2088,54 +2088,6 @@ function playTone(scene, frequency, duration) {
   oscillator.stop(audioContext.currentTime + duration);
 }
 
-// MUSIC (optional)
-function playBackgroundMusic(scene) {
-  const audioContext = scene.sound.context;
-  const tempo = 120;
-  const beatDuration = 60 / tempo;
-  const loopBars = 4;
-  const loopDuration = beatDuration * 4 * loopBars;
-  const bassPattern = [
-    { note: 110, start: 0, duration: 0.15 }, { note: 110, start: 0.5, duration: 0.1 },
-    { note: 146.83, start: 1, duration: 0.15 }, { note: 110, start: 1.75, duration: 0.1 },
-    { note: 123.47, start: 2.5, duration: 0.15 }, { note: 110, start: 3.25, duration: 0.1 },
-    { note: 146.83, start: 4, duration: 0.2 }, { note: 123.47, start: 4.75, duration: 0.1 },
-    { note: 98, start: 5.5, duration: 0.15 }, { note: 110, start: 6.25, duration: 0.1 },
-    { note: 146.83, start: 7, duration: 0.2 }, { note: 110, start: 7.75, duration: 0.1 }
-  ];
-  const melodyPattern = [
-    { note: 440, start: 0.25, duration: 0.1 }, { note: 493.88, start: 1.25, duration: 0.1 },
-    { note: 587.33, start: 2.25, duration: 0.15 },{ note: 493.88, start: 3, duration: 0.1 },
-    { note: 523.25, start: 4.25, duration: 0.1 }, { note: 587.33, start: 5.25, duration: 0.15 },
-    { note: 659.25, start: 6.5, duration: 0.2 },  { note: 587.33, start: 7.25, duration: 0.1 }
-  ];
-  function scheduleLoop(startTime) {
-    bassPattern.forEach(({ note, start, duration }) => {
-      const osc = audioContext.createOscillator(); const gain = audioContext.createGain();
-      osc.connect(gain); gain.connect(audioContext.destination);
-      osc.type = 'sawtooth'; osc.frequency.value = note;
-      const noteStart = startTime + start * beatDuration; const noteEnd = noteStart + duration;
-      gain.gain.setValueAtTime(0.08, noteStart); gain.gain.exponentialRampToValueAtTime(0.01, noteEnd);
-      osc.start(noteStart); osc.stop(noteEnd);
-    });
-    melodyPattern.forEach(({ note, start, duration }) => {
-      const osc = audioContext.createOscillator(); const gain = audioContext.createGain();
-      osc.connect(gain); gain.connect(audioContext.destination);
-      osc.type = 'square'; osc.frequency.value = note;
-      const noteStart = startTime + start * beatDuration; const noteEnd = noteStart + duration;
-      gain.gain.setValueAtTime(0.04, noteStart); gain.gain.exponentialRampToValueAtTime(0.01, noteEnd);
-      osc.start(noteStart); osc.stop(noteEnd);
-    });
-    const nextLoopTime = startTime + loopDuration;
-    if (!gameOver && nextLoopTime < audioContext.currentTime + 10) {
-      scheduleLoop(nextLoopTime);
-    } else {
-      setTimeout(() => { if (!gameOver) scheduleLoop(audioContext.currentTime); }, (loopDuration - 0.5) * 1000);
-    }
-  }
-  scheduleLoop(audioContext.currentTime);
-}
-
 /* =========================
    AUDIO DINÁMICO DE CARGA
    ========================= */
