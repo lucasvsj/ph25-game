@@ -835,8 +835,6 @@ let powerUps = [];
 let jetpackActive = false;
 let jetpackLeftBlock = null;
 let jetpackRightBlock = null;
-let isInvulnerable = false;
-let invulnerabilityEndTime = 0;
 let debugHitboxes = false;
 let debugGraphics;
 // Combo system
@@ -887,7 +885,6 @@ const SHIELDED_SPAWN_CHANCE = 0.08;
 // Power-Up constants
 const POWERUP_SPAWN_CHANCE = 0.20;
 const POWERUP_MAX_ACTIVE = 2;
-const INVULNERABILITY_DURATION_MS = 1500;
 const FAILSAFE_HOLD_MS = 5000; // hold P1A+P1B for 5s to return to menu
 
 // ===== Enemy bullets (UPWARD TRAJECTORY) =====
@@ -959,8 +956,6 @@ function create(data) {
   jetpackActive = false;
   jetpackLeftBlock = null;
   jetpackRightBlock = null;
-  isInvulnerable = false;
-  invulnerabilityEndTime = 0;
   // Reset failsafe in game scene
   fsPrimaryDown = false; fsSecondaryDown = false; failsafeStartTime = 0;
 
@@ -1012,13 +1007,9 @@ function create(data) {
   this.physics.add.collider(bulletsGroup, platformsGroup, (b, _p) => { if (b && b.destroy) b.destroy(); });
   this.physics.add.overlap(bulletsGroup, enemiesGroup, (b, e) => onBulletHitsEnemy(this, b, e));
   this.physics.add.overlap(enemyBulletsGroup, player, (b, _p) => {
-    if (!gameOver && !isInvulnerable) {
+    if (!gameOver) {
       if (b && b.destroy) b.destroy(); // destroy first to avoid multi-triggers
-      if (jetpackActive) {
-        onJetpackDamaged(this);
-      } else {
-        endGame(this);
-      }
+      endGame(this);
     }
   });
 
@@ -1048,21 +1039,14 @@ function create(data) {
   // Hazards
   setupHazards(this);
   this.physics.add.overlap(player, hazardsGroup, (_pl, _hz) => {
-    if (hazardOn && !isInvulnerable) {
-      if (jetpackActive) {
-        onJetpackDamaged(this);
-      } else {
-        endGame(this);
-      }
+    if (hazardOn) {
+      endGame(this);
+      hazardOn = false;
     }
   });
   this.physics.add.overlap(player, enemiesGroup, (p, e) => {
-    if (!gameOver && !isInvulnerable) {
-      if (jetpackActive) {
-        onJetpackDamaged(this);
-      } else {
-        endGame(this);
-      }
+    if (!gameOver) {
+      endGame(this);
     }
   });
 
@@ -1329,13 +1313,6 @@ function update(_time, _delta) {
 
   // Update jetpack blocks
   if (jetpackActive) updateJetpackPosition();
-
-  // Update invulnerability
-  if (isInvulnerable && this.time.now >= invulnerabilityEndTime) {
-    isInvulnerable = false;
-    player.setAlpha(1);
-    player.setFillStyle(0xffffff);
-  }
 
   // Hazards follow camera and toggle
   updateHazards(this);
@@ -1810,9 +1787,7 @@ function endGame(scene) {
   // Clear jetpack
   if (jetpackActive) deactivateJetpack(scene);
 
-  // Clear invulnerability
-  isInvulnerable = false;
-  invulnerabilityEndTime = 0;
+  // Reset player visuals
   if (player) {
     player.setAlpha(1);
     player.setScale(1, 1);
@@ -2309,59 +2284,6 @@ function updateJetpackPosition() {
   const offsetX = 14;
   if (jetpackLeftBlock) { jetpackLeftBlock.x = player.x - offsetX; jetpackLeftBlock.y = player.y; }
   if (jetpackRightBlock) { jetpackRightBlock.x = player.x + offsetX; jetpackRightBlock.y = player.y; }
-}
-function onJetpackDamaged(scene) {
-  if (!jetpackActive || isInvulnerable) return;
-
-  // Activate invulnerability immediately
-  isInvulnerable = true;
-  invulnerabilityEndTime = scene.time.now + INVULNERABILITY_DURATION_MS;
-
-  scene.tweens.killTweensOf(player);
-  player.setAlpha(1);
-  player.setScale(1, 1);
-
-  for (let i = 0; i < 12; i++) {
-    const angle = (i / 12) * Math.PI * 2;
-    const p = scene.add.rectangle(player.x, player.y, 4, 4, 0xff6600);
-    scene.physics.add.existing(p);
-    p.body.setVelocity(Math.cos(angle) * 200, Math.sin(angle) * 200);
-    p.body.setGravity(0, 300);
-    scene.tweens.add({ targets: p, alpha: 0, scale: 0, duration: 400, onComplete: () => p.destroy() });
-  }
-
-  player.setFillStyle(0xff0000);
-  scene.tweens.add({
-    targets: player,
-    scaleX: { from: 1, to: 1.1 },
-    scaleY: { from: 1, to: 1.1 },
-    duration: 100,
-    yoyo: true,
-    repeat: 2,
-    onComplete: () => {
-      player.setFillStyle(0xffffff);
-      player.setScale(1, 1);
-      startInvulnerabilityFlicker(scene);
-    }
-  });
-
-  playTone(scene, 220, 0.15);
-  playTone(scene, 180, 0.15);
-  deactivateJetpack(scene);
-}
-function startInvulnerabilityFlicker(scene) {
-  if (!isInvulnerable) return;
-  scene.tweens.add({
-    targets: player,
-    alpha: { from: 0.3, to: 1 },
-    duration: 150,
-    yoyo: true,
-    repeat: Math.floor(INVULNERABILITY_DURATION_MS / 300) - 1,
-    ease: 'Linear',
-    onComplete: () => {
-      if (player) { player.setAlpha(1); player.setFillStyle(0xffffff); }
-    }
-  });
 }
 
 // ===== Charge Shot helpers =====
