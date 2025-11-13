@@ -657,9 +657,10 @@ function buildModeSelectOverlay(s) {
 
   // Cards
   s.modeIndex = 0;
-  const cardW = 300; const cardH = 300;
+  const cardW = 270; const cardH = 280;
 
   // Normal card
+  const nCardGlow = s.add.rectangle(250, 330, cardW + 20, cardH + 20, 0x00ffff, 0.15);
   const nCardBorder = s.add.rectangle(250, 330, cardW, cardH, 0x001a1a, 0.55);
   nCardBorder.setStrokeStyle(2, 0x00ffff, 0.8);
 
@@ -678,11 +679,15 @@ function buildModeSelectOverlay(s) {
   const nPlayer = s.add.rectangle(250, 300, 18, 24, 0xffffff);
   const nEnemy = s.add.rectangle(250, enemyYValue, 30, 16, 0xff2222);
   const nBullet = s.add.rectangle(250, enemyYValue - 22, 6, 14, 0xff4444);
+  const nSelectedLabel = s.add.text(250, 460, '< SELECTED >', {
+    fontSize: '18px', fontFamily: 'Arial, sans-serif', color: '#ffffff', stroke: '#000000', strokeThickness: 3
+  }).setOrigin(0.5).setAlpha(0);
   const nHint = s.add.text(250, 420, `Press ${currentShootKey.toUpperCase()} to pick`, {
     fontSize: '14px', fontFamily: 'Arial, sans-serif', color: '#aaaaaa'
   }).setOrigin(0.5);
 
   // Challenger card
+  const cCardGlow = s.add.rectangle(550, 330, cardW + 20, cardH + 20, 0xEEF527, 0.15);
   const cCardBorder = s.add.rectangle(550, 330, cardW, cardH, 0x1a1a00, 0.55);
   cCardBorder.setStrokeStyle(2, 0xEEF527, 0.8);
 
@@ -702,6 +707,9 @@ function buildModeSelectOverlay(s) {
   const cPlayer = s.add.rectangle(550, 300, 18, 24, 0xffffff);
   const cEnemy = s.add.rectangle(550, enemyYValue, 30, 16, 0xff2222);
   const cBullet = s.add.rectangle(550, enemyYValue - 22, 6, 14, 0x00ffff);
+  const cSelectedLabel = s.add.text(550, 460, '< SELECTED >', {
+    fontSize: '18px', fontFamily: 'Arial, sans-serif', color: '#ffffff', stroke: '#000000', strokeThickness: 3
+  }).setOrigin(0.5).setAlpha(0);
   const cHint = s.add.text(550, 420, `Press ${currentShootKey.toUpperCase()} to pick`, {
     fontSize: '14px', fontFamily: 'Arial, sans-serif', color: '#aaaaaa'
   }).setOrigin(0.5);
@@ -709,8 +717,8 @@ function buildModeSelectOverlay(s) {
   // Add to group
   s.modeGroup.addMultiple([
     overlay, title, help,
-    nCardBorder, nTitle, nDesc, nG, nPlat, nPlayer, nEnemy, nBullet, nHint,
-    cCardBorder, cTitle, cDesc, cG, cPlat, cPlayer, cEnemy, cBullet, cHint
+    nCardGlow, nCardBorder, nTitle, nDesc, nG, nPlat, nPlayer, nEnemy, nBullet, nHint, nSelectedLabel,
+    cCardGlow, cCardBorder, cTitle, cDesc, cG, cPlat, cPlayer, cEnemy, cBullet, cHint, cSelectedLabel
   ]);
 
   // Input for Mode Select
@@ -736,14 +744,75 @@ function buildModeSelectOverlay(s) {
 
   function updateModeVisuals() {
     const leftSel = s.modeIndex === 0;
-    nCardBorder.setScale(leftSel ? 1.06 : 1);
-    nCardBorder.setStrokeStyle(leftSel ? 3 : 2, 0xffffff, leftSel ? 1 : 0.8);
-    nTitle.setColor(leftSel ? '#ffffff' : '#00ffff');
-
     const rightSel = s.modeIndex === 1;
-    cCardBorder.setScale(rightSel ? 1.06 : 1);
-    cCardBorder.setStrokeStyle(rightSel ? 3 : 2, 0xffffff, rightSel ? 1 : 0.8);
+    
+    // Kill existing tweens
+    s.tweens.killTweensOf([nCardBorder, nCardGlow, nTitle, nSelectedLabel]);
+    s.tweens.killTweensOf([cCardBorder, cCardGlow, cTitle, cSelectedLabel]);
+    
+    // Normal card
+    nCardBorder.setScale(leftSel ? 1.08 : 1);
+    nCardBorder.setStrokeStyle(leftSel ? 4 : 2, leftSel ? 0xffffff : 0x00ffff, 1);
+    nCardBorder.setFillStyle(0x001a1a, leftSel ? 0.75 : 0.55);
+    nTitle.setScale(leftSel ? 1.12 : 1);
+    nTitle.setColor(leftSel ? '#ffffff' : '#00ffff');
+    nSelectedLabel.setAlpha(leftSel ? 1 : 0);
+    
+    if (leftSel) {
+      s.tweens.add({
+        targets: nCardGlow,
+        alpha: { from: 0.2, to: 0.4 },
+        scale: { from: 1, to: 1.05 },
+        duration: 600,
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.easeInOut'
+      });
+      s.tweens.add({
+        targets: nSelectedLabel,
+        scale: { from: 0.95, to: 1.05 },
+        duration: 800,
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.easeInOut'
+      });
+    } else {
+      nCardGlow.setAlpha(0.15);
+      nCardGlow.setScale(1);
+    }
+    
+    // Challenger card
+    cCardBorder.setScale(rightSel ? 1.08 : 1);
+    cCardBorder.setStrokeStyle(rightSel ? 4 : 2, rightSel ? 0xffffff : 0xEEF527, 1);
+    cCardBorder.setFillStyle(0x1a1a00, rightSel ? 0.75 : 0.55);
+    cTitle.setScale(rightSel ? 1.12 : 1);
     cTitle.setColor(rightSel ? '#ffffff' : '#EEF527');
+    cSelectedLabel.setAlpha(rightSel ? 1 : 0);
+    
+    if (rightSel) {
+      s.tweens.add({
+        targets: cCardGlow,
+        alpha: { from: 0.2, to: 0.4 },
+        scale: { from: 1, to: 1.05 },
+        duration: 600,
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.easeInOut'
+      });
+      s.tweens.add({
+        targets: cSelectedLabel,
+        scale: { from: 0.95, to: 1.05 },
+        duration: 800,
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.easeInOut'
+      });
+    } else {
+      cCardGlow.setAlpha(0.15);
+      cCardGlow.setScale(1);
+    }
+    
+    playTone(s, 440, 0.05);
   }
 
   function confirmMode() {
