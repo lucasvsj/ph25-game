@@ -43,6 +43,11 @@ const MenuScene = { key: 'menu', create: menuCreate, update: menuUpdate };
 let currentShootKey = 'e';
 let currentRayKey = 'i';
 let selectedMode = 'challenger'; // 'normal' or 'challenger'
+let tutorialCompleted = false; // Tutorial completion flag
+let tutorialMode = false; // Currently in tutorial
+let tutorialStep = 0; // Current tutorial step (0-5)
+let tutorialStep5HoldStart = 0; // Time when player started holding shoot key in Step 5
+let tutorialStep5Frozen = false; // Whether game is frozen in Step 5
 
 // Game Over UI state
 let gameOverIndex = 0;
@@ -65,6 +70,8 @@ let failsafeStartTime = 0;
 function menuCreate() {
   const s = this;
   s.cameras.main.setBackgroundColor('#000000');
+  // Load settings from localStorage
+  loadSettings();
   // Start background music from Main Menu
   startBackgroundMusic(this);
 
@@ -125,9 +132,10 @@ function menuCreate() {
     return t;
   };
   s.btnStart = mkBtn(260, 'Start Game', () => showModeSelect(s));
-  s.btnInstr = mkBtn(320, 'Instructions', () => showInstructions(s));
-  s.btnLeaderboard = mkBtn(380, 'Leaderboard', () => showLeaderboard(s));
-  s.btnExit  = mkBtn(440, 'Controls', () => showControls(s));
+  s.btnTutorial = mkBtn(320, 'Tutorial', () => startTutorial(s));
+  s.btnInstr = mkBtn(380, 'Instructions', () => showInstructions(s));
+  s.btnLeaderboard = mkBtn(440, 'Leaderboard', () => showLeaderboard(s));
+  s.btnExit  = mkBtn(500, 'Controls', () => showControls(s));
   s.menuIndex = 0; updateMenuVisuals(s);
 
   // ===== Instructions overlay (hidden by default) =====
@@ -404,7 +412,6 @@ function menuCreate() {
     if (raw === 'Escape' || key === 'P1B') { hideControls(s); return; }
     if (key === 'P1U') { s.controlsIndex = (s.controlsIndex + s.controlsItems.length - 1) % s.controlsItems.length; updateControlsVisuals(s); return; }
     if (key === 'P1D') { s.controlsIndex = (s.controlsIndex + 1) % s.controlsItems.length; updateControlsVisuals(s); return; }
-    // P1A close moved to separate keyup handler to avoid keyboard repeat issues
     // Rebind when a single printable key is pressed
     if (raw && raw.length === 1) {
       const k = raw.toLowerCase();
@@ -437,7 +444,13 @@ function menuCreate() {
     if (key === 'P1U') { s.menuIndex = (s.menuIndex + s.menuItems.length - 1) % s.menuItems.length; updateMenuVisuals(s); }
     else if (key === 'P1D') { s.menuIndex = (s.menuIndex + 1) % s.menuItems.length; updateMenuVisuals(s); }
     else if (key === 'P1A') {
-      const actions = [() => showModeSelect(s), () => showInstructions(s), () => showLeaderboard(s), () => showControls(s)];
+      const actions = [
+        () => showModeSelect(s),
+        () => startTutorial(s),
+        () => showInstructions(s),
+        () => showLeaderboard(s),
+        () => showControls(s)
+      ];
       actions[s.menuIndex]();
     }
   });
@@ -837,6 +850,94 @@ function hideModeSelect(s) {
   s.modeGroup.setVisible(false);
 }
 
+// ===== Tutorial functions =====
+function startTutorial(s) {
+  // Simple tutorial: launch game with tutorial flags
+  tutorialMode = true;
+  tutorialStep = 0;
+  selectedMode = 'normal'; // Tutorial uses normal mode
+  s.scene.start('game');
+}
+
+function updateTutorialText(scene) {
+  if (!tutorialMode || !scene.tutorialText) return;
+  
+  const steps = [
+    'Step 1/6: Move left and right (A/D keys)',
+    'Step 2/6: Jump! Press W to jump',
+    'Step 3/6: Shoot downward! Press ' + currentShootKey.toUpperCase() + ' while in the air',
+    'Step 4/6: Kill an enemy while airborne to start a COMBO!',
+    'Step 5/6: After you kill an enemy you enter Combo mode.\nKeep killing enemies to increase combo multiplier\n(HOLD ' + currentShootKey.toUpperCase() + ' for 1 second to continue)',
+    'Tutorial Complete! Press ESC to return to menu'
+  ];
+  
+  scene.tutorialText.setText(steps[tutorialStep] || '');
+}
+
+function checkTutorialProgress(scene) {
+  if (!tutorialMode) return;
+  
+  // Don't check progress while frozen
+  if (tutorialStep5Frozen) return;
+  
+  // Step 0: Move left or right
+  if (tutorialStep === 0 && (keysState.left || keysState.right)) {
+    tutorialStep = 1;
+    updateTutorialText(scene);
+    playTone(scene, 660, 0.1);
+  }
+  
+  // Step 3: Spawn tutorial dummy enemy when step becomes active
+  if (tutorialStep === 3 && !scene.tutorialEnemySpawned && scene.tutorialPlatform) {
+    scene.tutorialEnemySpawned = true;
+    spawnTutorialDummy(scene);
+  }
+  
+  // Step 1: Jump (checked in input handler)
+  // Step 2: Shoot (checked in input handler)
+  // Step 3: Get first combo kill (checked in onBulletHitsEnemy)
+  // Step 4: Kill enemy while airborne, then land and hold shoot key (checked in update loop)
+  // Step 5: Tutorial complete (displayed after holding key for 1 second)
+}
+
+function spawnTutorialDummy(scene) {
+  if (!scene.tutorialPlatform || !enemiesGroup) return;
+  
+  const plat = scene.tutorialPlatform;
+  const enemyX = plat.x;
+  const enemyY = plat.y - 6 - 7;
+  
+  const enemy = scene.add.rectangle(enemyX, enemyY, 28, 14, 0xff0000);
+  enemy.setStrokeStyle(1, 0xff6666, 0.8);
+  scene.physics.add.existing(enemy);
+  
+  if (enemy.body) {
+    enemy.body.setCollideWorldBounds(false);
+    enemy.body.setBounce(0, 0);
+    enemy.body.setDragX(0);
+    enemy.body.setVelocityX(0);
+    enemy.body.setAllowGravity(false);
+    enemy.body.enable = true;
+  }
+  
+  enemy.type = 'walker';
+  enemy.shielded = false;
+  enemy.platformRef = plat;
+  enemy.vx = 0; // No movement
+  enemy.tutorialDummy = true; // Flag to prevent damage
+  
+  enemiesGroup.add(enemy);
+  plat.enemies.push(enemy);
+  
+  // Visual indicator that it's a dummy (slight pulse)
+  scene.tweens.add({
+    targets: enemy,
+    alpha: { from: 1, to: 0.7 },
+    duration: 800,
+    ease: 'Sine.easeInOut'
+  });
+}
+
 // ===== Rebinding helpers =====
 function rebindShootKey(newKey) {
   const k = (newKey || '').toLowerCase();
@@ -896,6 +997,7 @@ let keysState = { left: false, right: false };
 let wasOnGround = false;
 let ammo = 3;
 let maxAmmo = 10;
+let baseMaxAmmo = 10; // Base value for easy mode calculations
 let maxDepth = 0;
 let speed = 220;
 let jump = 300;
@@ -1028,6 +1130,12 @@ function create(data) {
   keysState.left = keysState.right = false;
   hazardOn = true;
   hazardTimer = 0;
+  
+  // Reset tutorial state
+  scene.tutorialEnemySpawned = false;
+  scene.tutorialPlatform = null;
+  tutorialStep5HoldStart = 0;
+  tutorialStep5Frozen = false;
 
   // Reset charge shot state
   isCharging = false;
@@ -1108,7 +1216,28 @@ function create(data) {
   player.body.checkCollision.up = player.body.checkCollision.down = player.body.checkCollision.left = player.body.checkCollision.right = true;
 
   // Seed platforms
-  seedPlatforms(this, 220, this.cameras.main.scrollY + 800);
+  if (tutorialMode) {
+    // Tutorial: create only one large platform with one enemy
+    const tutorialPlatWidth = 800; // Extends almost wall-to-wall (800 - 40*2)
+    const tutorialPlatX = 400; // Center
+    const tutorialPlatY = 350; // Below starting platform
+    const tutorialPlat = this.add.rectangle(tutorialPlatX, tutorialPlatY, tutorialPlatWidth, 12, 0x00aaff);
+    tutorialPlat.setStrokeStyle(2, 0x00ffff, 0.7);
+    this.physics.add.existing(tutorialPlat, true);
+    if (tutorialPlat.body) {
+      tutorialPlat.body.checkCollision.up = tutorialPlat.body.checkCollision.down = tutorialPlat.body.checkCollision.left = tutorialPlat.body.checkCollision.right = true;
+      if (tutorialPlat.body.updateFromGameObject) tutorialPlat.body.updateFromGameObject();
+    }
+    tutorialPlat.enemies = [];
+    if (platformsGroup) platformsGroup.add(tutorialPlat);
+    platforms.push(tutorialPlat);
+    
+    // Store tutorial platform reference for later enemy spawn
+    scene.tutorialPlatform = tutorialPlat;
+  } else {
+    // Normal game: seed multiple platforms
+    seedPlatforms(this, 220, this.cameras.main.scrollY + 800);
+  }
 
   // Colliders & overlaps
   this.physics.add.collider(player, platformsGroup, () => {
@@ -1156,8 +1285,10 @@ function create(data) {
     }
   });
 
-  // Hazards
-  setupHazards(this);
+  // Hazards (not in tutorial)
+  if (!tutorialMode) {
+    setupHazards(this);
+  }
   this.physics.add.overlap(player, hazardsGroup, (_pl, _hz) => {
     if (hazardOn) {
       applyHitstop(this, 100);
@@ -1168,6 +1299,9 @@ function create(data) {
     }
   });
   this.physics.add.overlap(player, enemiesGroup, (p, e) => {
+    // Ignore tutorial dummy enemies
+    if (e && e.tutorialDummy) return;
+    
     if (!gameOver) {
       applyHitstop(this, 90);
       applyScreenshake(this, 5, 130);
@@ -1200,6 +1334,18 @@ function create(data) {
   comboText = this.add.text(16, 68, '', {
     fontSize: '20px', fontFamily: 'Arial, sans-serif', color: '#00ffff', stroke: '#000000', strokeThickness: 2
   }).setScrollFactor(0).setDepth(1000);
+  
+  // Tutorial instructions
+  let tutorialText = null;
+  if (tutorialMode) {
+    tutorialText = this.add.text(400, 480, '', {
+      fontSize: '22px', fontFamily: 'Arial, sans-serif', color: '#ffff00', 
+      stroke: '#000000', strokeThickness: 3, align: 'center',
+      backgroundColor: '#000000aa', padding: { x: 15, y: 10 }
+    }).setOrigin(0.5).setScrollFactor(0).setDepth(10001);
+    scene.tutorialText = tutorialText;
+    updateTutorialText(scene);
+  }
 
   const titleSplash = this.add.text(400, 200, 'CHAINFALL', {
     fontSize: '64px', fontFamily: 'Arial, sans-serif',
@@ -1213,6 +1359,12 @@ function create(data) {
   // Input handlers (arcade mapping)
   this.input.keyboard.on('keydown', (event) => {
     const key = KEYBOARD_TO_ARCADE[event.key] || event.key;
+    
+    // Block all input while tutorial is frozen (except ESC to exit)
+    if (tutorialMode && tutorialStep5Frozen && event.key !== 'Escape') {
+      return;
+    }
+    
     if (nameEntryActive) {
       if (key === 'P1U') {
         const charCode = nameEntry[nameEntryIndex].charCodeAt(0);
@@ -1263,10 +1415,30 @@ function create(data) {
     if (key === 'P1U' && player && player.body && player.body.blocked.down) {
       player.body.setVelocityY(-jump);
       playTone(scene, 523, 0.05);
+      
+      // Tutorial Step 1: Jump
+      if (tutorialMode && tutorialStep === 1) {
+        tutorialStep = 2;
+        updateTutorialText(scene);
+        playTone(scene, 660, 0.1);
+      }
+    }
+    // ESC in tutorial returns to menu
+    if (event.key === 'Escape' && tutorialMode) {
+      tutorialMode = false;
+      scene.scene.start('menu');
+      return;
     }
     // P1A: normal shot in air
     if (key === 'P1A' && player && player.body && !player.body.blocked.down && ammo > 0 && !isCharging) {
       fireBullet(scene);
+      
+      // Tutorial Step 2: Shoot
+      if (tutorialMode && tutorialStep === 2) {
+        tutorialStep = 3;
+        updateTutorialText(scene);
+        playTone(scene, 660, 0.1);
+      }
     }
     // P1B: start charge if airborne
     if (key === 'P1B' && player && player.body && !player.body.blocked.down && ammo > 1 && !isCharging) {
@@ -1275,6 +1447,12 @@ function create(data) {
   });
   this.input.keyboard.on('keyup', (event) => {
     const key = KEYBOARD_TO_ARCADE[event.key] || event.key;
+    
+    // Block all input while tutorial is frozen
+    if (tutorialMode && tutorialStep5Frozen) {
+      return;
+    }
+    
     if (key === 'P1L') keysState.left = false;
     if (key === 'P1R') keysState.right = false;
 
@@ -1317,6 +1495,48 @@ function create(data) {
 function update(_time, _delta) {
   checkFailsafe(this);
   if (gameOver) return;
+  
+  // Check tutorial progress
+  checkTutorialProgress(this);
+  
+  // Tutorial Step 4 -> 5: Hold shoot key for 1 second after landing
+  if (tutorialMode && tutorialStep === 4 && tutorialStep5Frozen) {
+    const shootKey = this.input.keyboard.addKey(currentShootKey.toUpperCase());
+    
+    if (shootKey.isDown) {
+      // Player is holding the shoot key
+      if (tutorialStep5HoldStart === 0) {
+        tutorialStep5HoldStart = this.time.now;
+      }
+      
+      const holdDuration = this.time.now - tutorialStep5HoldStart;
+      
+      // After 1 second, unfreeze and advance to Step 5
+      if (holdDuration >= 1000) {
+        tutorialStep5Frozen = false;
+        tutorialStep5HoldStart = 0;
+        tutorialStep = 5; // Advance to Step 5 (Complete)
+        
+        // Unfreeze the game (resume physics)
+        if (this.physics && this.physics.world) {
+          this.physics.world.resume();
+        }
+        
+        updateTutorialText(this);
+        playTone(this, 1000, 0.2);
+        
+        // Mark tutorial as completed
+        tutorialCompleted = true;
+        saveSettings();
+      }
+    } else {
+      // Player released the key, reset timer
+      tutorialStep5HoldStart = 0;
+    }
+    
+    // Skip rest of update while frozen
+    return;
+  }
 
   // Horizontal control
   if (player && player.body) {
@@ -1425,31 +1645,35 @@ function update(_time, _delta) {
     wasOnGround = onGround;
   }
 
-  // Ensure platforms fill below camera; recycle
+  // Ensure platforms fill below camera; recycle (not in tutorial)
   const cam = this.cameras.main;
-  cam.scrollY = Math.max(cam.scrollY, player.y - 260);
-  ensureWorldCapacity(this, cam.scrollY + 1000);
-  seedPlatforms(this, cam.scrollY + 100, cam.scrollY + 800);
-  
-  // Track depth and check milestones
-  const currentDepth = Math.floor(player.y - 150);
-  if (currentDepth > maxDepth) {
-    maxDepth = currentDepth;
-    while (maxDepth >= milestoneDepth) {
-      showMilestone(this, `${milestoneDepth}m DEPTH!`, '#00ffff');
-      milestoneDepth = Math.round(milestoneDepth * 1.5); // Next milestone
+  if (!tutorialMode) {
+    cam.scrollY = Math.max(cam.scrollY, player.y - 260);
+    ensureWorldCapacity(this, cam.scrollY + 1000);
+    seedPlatforms(this, cam.scrollY + 100, cam.scrollY + 800);
+    
+    // Track depth and check milestones
+    const currentDepth = Math.floor(player.y - 150);
+    if (currentDepth > maxDepth) {
+      maxDepth = currentDepth;
+      while (maxDepth >= milestoneDepth) {
+        showMilestone(this, `${milestoneDepth}m DEPTH!`, '#00ffff');
+        milestoneDepth = Math.round(milestoneDepth * 1.5); // Next milestone
+      }
     }
-  }
-  for (let i = 0; i < platforms.length; i++) {
-    const p = platforms[i];
-    if (p.y < cam.scrollY - 60) {
-      const maxY = platforms.reduce((m, o) => Math.max(m, o.y), cam.scrollY + 300);
-      positionPlatform(this, p, maxY + Phaser.Math.Between(70, 120));
-      if (p.body && p.body.updateFromGameObject) p.body.updateFromGameObject();
+    
+    // Recycle platforms that went off-screen
+    for (let i = 0; i < platforms.length; i++) {
+      const p = platforms[i];
+      if (p.y < cam.scrollY - 60) {
+        const maxY = platforms.reduce((m, o) => Math.max(m, o.y), cam.scrollY + 300);
+        positionPlatform(this, p, maxY + Phaser.Math.Between(70, 120));
+        if (p.body && p.body.updateFromGameObject) p.body.updateFromGameObject();
+      }
     }
+    // Rebase coordinates to avoid large Y
+    maybeRebaseWorld(this);
   }
-  // Rebase coordinates to avoid large Y
-  maybeRebaseWorld(this);
 
   // Cleanup bullets below view
   bullets = bullets.filter(b => {
@@ -1489,14 +1713,16 @@ function update(_time, _delta) {
   // Update jetpack blocks
   if (jetpackActive) updateJetpackPosition();
 
-  // Hazards follow camera and toggle
-  updateHazards(this);
-  hazardTimer += _delta || 0;
-  if (hazardTimer >= hazardInterval) {
-    hazardTimer = 0;
-    hazardOn = !hazardOn;
-    hazardInterval = Phaser.Math.Between(900, 1800);
-    setHazardVisual(this);
+  // Hazards follow camera and toggle (not in tutorial)
+  if (!tutorialMode) {
+    updateHazards(this);
+    hazardTimer += _delta || 0;
+    if (hazardTimer >= hazardInterval) {
+      hazardTimer = 0;
+      hazardOn = !hazardOn;
+      hazardInterval = Phaser.Math.Between(900, 1800);
+      setHazardVisual(this);
+    }
   }
 
   // Enemies movement & behaviors
@@ -1574,6 +1800,30 @@ function addScore(name, score, mode) {
   leaderboardData.push({ name, score, mode: mode || 'normal' });
   // Do not slice globally; we limit per-mode to top 10 when displaying
   saveLeaderboard();
+}
+
+// ===== SETTINGS/CONFIG FUNCTIONS =====
+function loadSettings() {
+  try {
+    const data = localStorage.getItem('chainfall_settings');
+    if (data) {
+      const settings = JSON.parse(data);
+      tutorialCompleted = settings.tutorialCompleted || false;
+    }
+  } catch (e) {
+    console.error('Failed to load settings');
+  }
+}
+
+function saveSettings() {
+  try {
+    const settings = {
+      tutorialCompleted: tutorialCompleted
+    };
+    localStorage.setItem('chainfall_settings', JSON.stringify(settings));
+  } catch (e) {
+    console.error('Failed to save settings');
+  }
 }
 
 function isHighScore(score, mode) {
@@ -2150,6 +2400,50 @@ function fireBullet(scene) {
   playTone(scene, 880, 0.05);
 }
 
+function spawnCosmeticBullet(scene) {
+  const useBlue = comboCount > 0;
+  const bulletColor = useBlue ? 0x00ffff : 0xff4444;
+  const strokeColor = useBlue ? 0x88ffff : 0xff8888;
+
+  const b = scene.add.rectangle(player.x, player.y + 16, 6, 14, bulletColor);
+  b.setStrokeStyle(1, strokeColor, 0.7);
+  scene.physics.add.existing(b);
+  if (b.body && b.body.setSize) b.body.setSize(6, 14, true);
+  b.body.setAllowGravity(false);
+  b.body.enable = true;
+  b.body.checkCollision.up = b.body.checkCollision.down = b.body.checkCollision.left = b.body.checkCollision.right = true;
+  b.body.setVelocityY(550);
+  if (bulletsGroup) bulletsGroup.add(b);
+  bullets.push(b);
+
+  if (jetpackActive && jetpackLeftBlock && jetpackRightBlock) {
+    const bL = scene.add.rectangle(jetpackLeftBlock.x, jetpackLeftBlock.y + 10, 6, 14, bulletColor);
+    bL.setStrokeStyle(1, strokeColor, 0.7);
+    scene.physics.add.existing(bL);
+    if (bL.body && bL.body.setSize) bL.body.setSize(6, 14, true);
+    bL.body.setAllowGravity(false);
+    bL.body.enable = true;
+    bL.body.checkCollision.up = bL.body.checkCollision.down = bL.body.checkCollision.left = bL.body.checkCollision.right = true;
+    bL.body.setVelocityY(550);
+    if (bulletsGroup) bulletsGroup.add(bL);
+    bullets.push(bL);
+
+    const bR = scene.add.rectangle(jetpackRightBlock.x, jetpackRightBlock.y + 10, 6, 14, bulletColor);
+    bR.setStrokeStyle(1, strokeColor, 0.7);
+    scene.physics.add.existing(bR);
+    if (bR.body && bR.body.setSize) bR.body.setSize(6, 14, true);
+    bR.body.setAllowGravity(false);
+    bR.body.enable = true;
+    bR.body.checkCollision.up = bR.body.checkCollision.down = bR.body.checkCollision.left = bR.body.checkCollision.right = true;
+    bR.body.setVelocityY(550);
+    if (bulletsGroup) bulletsGroup.add(bR);
+    bullets.push(bR);
+  }
+
+  player.body.setVelocityY(Math.min(player.body.velocity.y - recoil, -recoil));
+  playTone(scene, 880, 0.05);
+}
+
 // ===== Enemy helpers =====
 function getDifficultyMultiplier() {
   const depth = Math.max(0, player.y - 150);
@@ -2239,6 +2533,15 @@ function spawnEnemy(scene, platform) {
 function updateEnemies(scene, deltaMs) {
   safeEach(enemiesGroup, (e) => {
     if (!e.active || !e.body) return;
+    
+    // Skip update for tutorial dummy enemies
+    if (e.tutorialDummy) {
+      // Keep them completely still
+      if (e.body.velocity.x !== 0) e.body.setVelocityX(0);
+      if (e.body.velocity.y !== 0) e.body.setVelocityY(0);
+      return;
+    }
+    
     const isJumper = e.type === 'jumper';
     const isShooter = e.type === 'shooterUp';
     if (!isJumper && e.body.velocity.y !== 0) e.body.setVelocityY(0);
@@ -2378,6 +2681,38 @@ function onBulletHitsEnemy(scene, bullet, enemy) {
       comboMultiplier = 1 + (comboCount * 0.5);
       earnedScore = Math.floor(baseScore * comboMultiplier);
       score += earnedScore;
+      
+      // Tutorial Step 3 -> 4: Kill enemy with combo - FIRE, then FREEZE after a short delay
+      if (tutorialMode && tutorialStep === 3 && comboCount === 1) {
+        tutorialStep = 4;
+        tutorialStep5HoldStart = 0;
+        spawnCosmeticBullet(scene);
+        // Schedule the freeze shortly after so the bullet is visible
+        if (!scene.tutorialFreezeScheduled) scene.tutorialFreezeScheduled = true;
+        scene.time.delayedCall(140, () => {
+          // Validate state before freezing
+          if (!tutorialMode || tutorialStep !== 4 || tutorialStep5Frozen) { scene.tutorialFreezeScheduled = false; return; }
+          tutorialStep5Frozen = true;
+          
+          // Reset key states to prevent stuck keys
+          keysState.left = false;
+          keysState.right = false;
+          
+          // Freeze the game (pause physics, but audio continues)
+          if (scene.physics && scene.physics.world) {
+            scene.physics.world.pause();
+          }
+          
+          // Stop player movement
+          if (player && player.body) {
+            player.body.setVelocity(0, 0);
+          }
+          
+          updateTutorialText(scene);
+          playTone(scene, 880, 0.15);
+          scene.tutorialFreezeScheduled = false;
+        });
+      }
 
       // VFX/SFX like Challenger
       const tiers = [
@@ -2454,6 +2789,11 @@ function onBulletHitsEnemy(scene, bullet, enemy) {
       milestoneScore += 1000; // Next milestone
     }
     enemy.destroy();
+    
+    // Tutorial: respawn dummy enemy endlessly
+    if (tutorialMode && enemy && enemy.tutorialDummy) {
+      spawnTutorialDummy(scene);
+    }
 
     // Guaranteed Jetpack drop for shielded enemies, unless player already has jetpack
     let spawnedPU = false;
