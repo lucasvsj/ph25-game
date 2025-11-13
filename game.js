@@ -65,6 +65,8 @@ let failsafeStartTime = 0;
 function menuCreate() {
   const s = this;
   s.cameras.main.setBackgroundColor('#000000');
+  // Start background music from Main Menu
+  startBackgroundMusic(this);
 
   // Initialize overlay visibility flags
   s.instructionsVisible = false;
@@ -982,6 +984,10 @@ let chargeOsc = null;
 let chargeGain = null;
 let chargeAudioCompleted = false;
 
+// Background music
+let bgMusicNodes = [];
+let bgMusicLoopId = null;
+
 function create(data) {
   const scene = this;
 
@@ -1853,6 +1859,7 @@ function showGameOverScreen(scene) {
 
 function endGame(scene) {
   gameOver = true;
+  stopBackgroundMusic();
   playTone(scene, 220, 0.5);
 
   // Clear charge
@@ -1908,6 +1915,7 @@ function restartGame(scene) {
   platforms = [];
   bullets = [];
   // Restart with current mode preserved
+  startBackgroundMusic(scene);
   scene.scene.restart({ mode: selectedMode });
 }
 
@@ -2530,6 +2538,367 @@ function playTone(scene, frequency, duration) {
   oscillator.start(audioContext.currentTime);
   oscillator.stop(audioContext.currentTime + duration);
 }
+
+// ====== BACKGROUND MUSIC ======
+// Globals expected somewhere in your code:
+// let bgMusicNodes = [];
+// let bgMusicLoopId = null;
+
+function startBackgroundMusic(scene) {
+  if (!scene || !scene.sound || !scene.sound.context) return;
+
+  // Stop any previous loop
+  stopBackgroundMusic();
+
+  const ctx = scene.sound.context;
+  const tempo = 112; // slower + groovier BPM
+  const beatDuration = 60 / tempo; // one beat in seconds
+
+  const beatsPerBar = 4;
+  const barsPerLoop = 4;
+  const totalBeatsPerLoop = beatsPerBar * barsPerLoop; // 16 beats
+  const loopLength = totalBeatsPerLoop * beatDuration;
+
+  // Slight offset so first notes don't get cut
+  const baseStartTime = ctx.currentTime + 0.1;
+
+  // ---- Helper functions ----
+
+  function scheduleTone({ note, time, dur, volume, type = 'sawtooth', pan = 0, detune = 0 }, loopStartTime) {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    const panner = ctx.createStereoPanner();
+
+    const t = loopStartTime + time * beatDuration;
+    const d = dur * beatDuration;
+
+    osc.type = type;
+    osc.frequency.value = note;
+    if (detune !== 0) osc.detune.value = detune;
+
+    osc.connect(gain);
+    gain.connect(panner);
+    panner.connect(ctx.destination);
+
+    panner.pan.setValueAtTime(pan, t);
+    gain.gain.setValueAtTime(volume, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + d);
+
+    osc.start(t);
+    osc.stop(t + d + 0.1);
+
+    bgMusicNodes.push({ osc, gain, panner });
+  }
+
+  function scheduleChord({ notes, time, dur, volume, pan = 0, detuneSpread = 8 }, loopStartTime) {
+    notes.forEach((note, i) => {
+      const detune = (i - (notes.length - 1) / 2) * detuneSpread;
+      scheduleTone({ note, time, dur, volume, pan, detune, type: 'sawtooth' }, loopStartTime);
+    });
+  }
+
+  function scheduleKick(timeBeat, loopStartTime) {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    const t = loopStartTime + timeBeat * beatDuration;
+    const d = 0.35 * beatDuration;
+
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(120, t);
+    osc.frequency.exponentialRampToValueAtTime(40, t + d);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+
+    gain.gain.setValueAtTime(0.4, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + d);
+
+    osc.start(t);
+    osc.stop(t + d + 0.05);
+
+    bgMusicNodes.push({ osc, gain });
+  }
+
+  function scheduleNoiseHit({ timeBeat, duration, volume, highpassFreq, bandpassFreq, pan = 0 }, loopStartTime) {
+    const t = loopStartTime + timeBeat * beatDuration;
+    const bufferSize = Math.floor(ctx.sampleRate * duration);
+    const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+
+    for (let i = 0; i < bufferSize; i++) {
+      data[i] = Math.random() * 2 - 1;
+    }
+
+    const noise = ctx.createBufferSource();
+    noise.buffer = buffer;
+
+    const gain = ctx.createGain();
+    const panner = ctx.createStereoPanner();
+
+    let filter = null;
+    if (highpassFreq || bandpassFreq) {
+      filter = ctx.createBiquadFilter();
+      if (bandpassFreq) {
+        filter.type = 'bandpass';
+        filter.frequency.value = bandpassFreq;
+        filter.Q.value = 1;
+      } else {
+        filter.type = 'highpass';
+        filter.frequency.value = highpassFreq;
+      }
+      noise.connect(filter);
+      filter.connect(gain);
+    } else {
+      noise.connect(gain);
+    }
+
+    gain.connect(panner);
+    panner.connect(ctx.destination);
+
+    panner.pan.setValueAtTime(pan, t);
+    gain.gain.setValueAtTime(volume, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + duration);
+
+    noise.start(t);
+    noise.stop(t + duration + 0.05);
+
+    bgMusicNodes.push({ osc: noise, gain, filter, panner });
+  }
+
+  function scheduleSnare(timeBeat, loopStartTime) {
+    // Short, bright noise burst
+    scheduleNoiseHit({
+      timeBeat,
+      duration: 0.13,
+      volume: 0.22,
+      highpassFreq: null,
+      bandpassFreq: 2000,
+      pan: 0
+    }, loopStartTime);
+  }
+
+  function scheduleHiHat(timeBeat, loopStartTime) {
+    const isOffBeat = (timeBeat % 1) !== 0; // 0.5, 1.5, etc
+    scheduleNoiseHit({
+      timeBeat,
+      duration: isOffBeat ? 0.09 : 0.05,
+      volume: isOffBeat ? 0.16 : 0.10,
+      highpassFreq: 7000,
+      bandpassFreq: null,
+      pan: isOffBeat ? 0.2 : -0.1
+    }, loopStartTime);
+  }
+
+  // ---- Musical patterns (in beats) ----
+  // C minor funk: C, D, E♭, F, G, B♭
+
+  // Bass: two variations that alternate each loop
+  const bassPatterns = [
+    // Pattern 0
+    [
+      { note: 65.41, time: 0,   dur: 0.9 },  // C2
+      { note: 65.41, time: 1.5, dur: 0.5 },  // ghost C2
+      { note: 73.42, time: 2,   dur: 0.7 },  // D2
+      { note: 77.78, time: 3,   dur: 0.7 },  // Eb2
+
+      { note: 65.41, time: 4,   dur: 0.8 },  // C2
+      { note: 98.00, time: 5.5, dur: 0.6 },  // G2
+      { note: 87.31, time: 6.5, dur: 0.6 },  // F2
+      { note: 73.42, time: 7.5, dur: 0.5 },  // D2
+
+      { note: 65.41, time: 8,   dur: 0.9 },  // C2
+      { note: 58.27, time: 9.5, dur: 0.5 },  // Bb1
+      { note: 65.41, time:10.0, dur: 0.5 },  // C2
+      { note: 73.42, time:11.0, dur: 0.6 },  // D2
+
+      { note: 77.78, time:12.0, dur: 0.7 },  // Eb2
+      { note: 98.00, time:13.0, dur: 0.7 },  // G2
+      { note: 65.41, time:14.5, dur: 0.4 },  // C2 pickup
+      { note: 73.42, time:15.0, dur: 0.6 }   // D2
+    ],
+    // Pattern 1 – jumps an octave sometimes
+    [
+      { note: 65.41,  time: 0,   dur: 0.9 }, // C2
+      { note: 73.42,  time: 0.75,dur: 0.4 }, // D2
+      { note: 77.78,  time: 1.5, dur: 0.5 }, // Eb2
+      { note: 98.00,  time: 2.0, dur: 0.6 }, // G2
+      { note: 130.81, time: 3.0, dur: 0.4 }, // C3
+
+      { note: 98.00,  time: 4.0, dur: 0.7 }, // G2
+      { note: 87.31,  time: 4.75,dur: 0.4 }, // F2
+      { note: 73.42,  time: 5.5, dur: 0.5 }, // D2
+      { note: 65.41,  time: 6.0, dur: 0.8 }, // C2
+      { note: 58.27,  time: 7.5, dur: 0.5 }, // Bb1
+
+      { note: 65.41,  time: 8.0, dur: 0.8 }, // C2
+      { note: 73.42,  time: 9.0, dur: 0.5 }, // D2
+      { note: 77.78,  time:10.0, dur: 0.5 }, // Eb2
+      { note: 98.00,  time:11.5, dur: 0.6 }, // G2
+
+      { note: 130.81, time:12.0, dur: 0.5 }, // C3
+      { note: 98.00,  time:13.0, dur: 0.6 }, // G2
+      { note: 73.42,  time:14.5, dur: 0.4 }, // D2
+      { note: 65.41,  time:15.0, dur: 0.7 }  // C2
+    ]
+  ];
+
+  // Melody: two call & response variations (higher octave)
+  const melodyPatterns = [
+    // Pattern 0
+    [
+      { note: 261.63, time: 0.5, dur: 0.4 }, // C4
+      { note: 311.13, time: 1.5, dur: 0.4 }, // Eb4
+      { note: 392.00, time: 2.5, dur: 0.35 },// G4
+      { note: 293.66, time: 3.5, dur: 0.4 }, // D4
+
+      { note: 261.63, time: 4.5, dur: 0.4 }, // C4
+      { note: 392.00, time: 5.5, dur: 0.4 }, // G4
+      { note: 466.16, time: 6.5, dur: 0.35 },// Bb4
+      { note: 311.13, time: 7.5, dur: 0.4 }, // Eb4
+
+      { note: 261.63, time: 9.0, dur: 0.35 },// C4
+      { note: 293.66, time:10.0, dur: 0.35 },// D4
+      { note: 311.13, time:10.5, dur: 0.35 },// Eb4
+      { note: 392.00, time:11.5, dur: 0.4 }, // G4
+
+      { note: 349.23, time:12.5, dur: 0.35 },// F4
+      { note: 311.13, time:13.0, dur: 0.35 },// Eb4
+      { note: 261.63, time:14.0, dur: 0.4 }, // C4
+      { note: 392.00, time:15.0, dur: 0.4 }  // G4
+    ],
+    // Pattern 1 – a bit more angular
+    [
+      { note: 392.00, time: 0.5, dur: 0.4 }, // G4
+      { note: 349.23, time: 1.5, dur: 0.3 }, // F4
+      { note: 311.13, time: 2.25,dur: 0.3 }, // Eb4
+      { note: 293.66, time: 3.0, dur: 0.35 },// D4
+
+      { note: 261.63, time: 4.0, dur: 0.4 }, // C4
+      { note: 293.66, time: 4.75,dur: 0.3 }, // D4
+      { note: 311.13, time: 5.5, dur: 0.3 }, // Eb4
+      { note: 466.16, time: 6.0, dur: 0.35 },// Bb4
+
+      { note: 392.00, time: 8.0, dur: 0.35 },// G4
+      { note: 349.23, time: 8.75,dur: 0.3 }, // F4
+      { note: 311.13, time: 9.5, dur: 0.3 }, // Eb4
+      { note: 261.63, time:10.0, dur: 0.4 }, // C4
+
+      { note: 293.66, time:12.0, dur: 0.4 }, // D4
+      { note: 311.13, time:12.75,dur: 0.3 }, // Eb4
+      { note: 392.00, time:13.5,dur: 0.4 }, // G4
+      { note: 261.63, time:15.0,dur: 0.4 }  // C4
+    ]
+  ];
+
+  // Chord stabs: two variations
+  const chordPatterns = [
+    [
+      { notes: [261.63, 311.13, 392.00], time: 0.0, dur: 0.6, volume: 0.045, pan: -0.2 }, // Cmin
+      { notes: [349.23, 440.00, 523.25], time: 4.0, dur: 0.6, volume: 0.045, pan:  0.2 }, // F
+      { notes: [392.00, 493.88, 587.33], time: 8.0, dur: 0.6, volume: 0.045, pan: -0.2 }, // G
+      { notes: [261.63, 311.13, 392.00], time:12.0, dur: 0.6, volume: 0.045, pan:  0.2 }  // Cmin
+    ],
+    [
+      { notes: [261.63, 311.13, 392.00], time: 0.0, dur: 0.6, volume: 0.045, pan:  0.2 }, // Cmin
+      { notes: [233.08, 293.66, 349.23], time: 4.0, dur: 0.6, volume: 0.045, pan: -0.2 }, // Bb
+      { notes: [196.00, 246.94, 293.66], time: 8.0, dur: 0.6, volume: 0.045, pan:  0.2 }, // Gm
+      { notes: [261.63, 311.13, 392.00], time:12.0, dur: 0.6, volume: 0.045, pan: -0.2 }  // Cmin
+    ]
+  ];
+
+  // Drums: kick, snare, hi-hat (in beats)
+  const kickBeats  = [0, 2, 4.5, 6, 8, 10, 12.5, 14];
+  const snareBeats = [2, 6, 10, 14];
+
+  const hihatBeats = [];
+  for (let b = 0; b < totalBeatsPerLoop; b += 0.5) {
+    hihatBeats.push(b); // 8th-note hats
+  }
+
+  // ---- Loop scheduling ----
+  function scheduleLoop(loopIndex) {
+    const loopStartTime = baseStartTime + loopIndex * loopLength;
+
+    const bassPattern    = bassPatterns[loopIndex % bassPatterns.length];
+    const melodyPattern  = melodyPatterns[loopIndex % melodyPatterns.length];
+    const chordPattern   = chordPatterns[loopIndex % chordPatterns.length];
+
+    // Bass (slightly left)
+    bassPattern.forEach(ev => {
+      scheduleTone({
+        note: ev.note,
+        time: ev.time,
+        dur: ev.dur,
+        volume: 0.10,
+        type: 'sawtooth',
+        pan: -0.15
+      }, loopStartTime);
+    });
+
+    // Melody (slightly right, square wave lead)
+    melodyPattern.forEach(ev => {
+      scheduleTone({
+        note: ev.note,
+        time: ev.time,
+        dur: ev.dur,
+        volume: 0.055,
+        type: 'square',
+        pan: 0.18
+      }, loopStartTime);
+    });
+
+    // Chord stabs (wide & soft)
+    chordPattern.forEach(ch => {
+      scheduleChord(ch, loopStartTime);
+    });
+
+    // Drums
+    kickBeats.forEach(beat => scheduleKick(beat, loopStartTime));
+    snareBeats.forEach(beat => scheduleSnare(beat, loopStartTime));
+    hihatBeats.forEach(beat => scheduleHiHat(beat, loopStartTime));
+  }
+
+  // Schedule first loop immediately
+  let loopIndex = 0;
+  scheduleLoop(loopIndex);
+  loopIndex++;
+
+  // Schedule recurring loops a bit early for seamless playback
+  bgMusicLoopId = setInterval(() => {
+    if (ctx.state === 'running') {
+      scheduleLoop(loopIndex);
+      loopIndex++;
+    }
+  }, loopLength * 1000 - 100);
+}
+
+function stopBackgroundMusic() {
+  // Clear loop timer
+  if (bgMusicLoopId) {
+    clearInterval(bgMusicLoopId);
+    bgMusicLoopId = null;
+  }
+
+  // Stop and disconnect all nodes
+  if (Array.isArray(bgMusicNodes)) {
+    bgMusicNodes.forEach(({ osc, gain, filter, panner }) => {
+      try {
+        if (osc && typeof osc.stop === 'function') {
+          osc.stop();
+        }
+      } catch (_e) {
+        // node already stopped
+      }
+      if (gain && gain.disconnect) gain.disconnect();
+      if (filter && filter.disconnect) filter.disconnect();
+      if (panner && panner.disconnect) panner.disconnect();
+    });
+  }
+
+  bgMusicNodes = [];
+}
+
 
 /* =========================
    AUDIO DINÁMICO DE CARGA
