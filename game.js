@@ -900,6 +900,10 @@ let maxDepth = 0;
 let speed = 220;
 let jump = 300;
 let recoil = 240;
+
+// Hitstop/screenshake (solo para muertes del jugador)
+let hitstopActive = false;
+let hitstopEndTime = 0;
 let enemiesGroup;
 let powerUpsGroup;
 let powerUps = [];
@@ -1022,6 +1026,10 @@ function create(data) {
   comboCount = 0;
   comboMultiplier = 1;
 
+  // Reset hitstop state
+  hitstopActive = false;
+  hitstopEndTime = 0;
+
   // Clear runtime arrays
   platforms = [];
   bullets = [];
@@ -1082,6 +1090,9 @@ function create(data) {
     // Challenger mode: LANDING on platform while in combo = death
     // Only triggers when touching from above (blocked.down = standing on platform)
     if (selectedMode === 'challenger' && comboCount > 0 && !gameOver && player.body.blocked.down) {
+      applyHitstop(this, 100);
+      applyScreenshake(this, 5, 150);
+      playImpactEffect(this, player.x, player.y, 0xff0000, 12);
       endGame(this);
     }
   });
@@ -1090,6 +1101,9 @@ function create(data) {
   this.physics.add.overlap(enemyBulletsGroup, player, (b, _p) => {
     if (!gameOver) {
       if (b && b.destroy) b.destroy(); // destroy first to avoid multi-triggers
+      applyHitstop(this, 90);
+      applyScreenshake(this, 4, 120);
+      playImpactEffect(this, player.x, player.y, 0xff4444, 10);
       endGame(this);
     }
   });
@@ -1121,12 +1135,18 @@ function create(data) {
   setupHazards(this);
   this.physics.add.overlap(player, hazardsGroup, (_pl, _hz) => {
     if (hazardOn) {
+      applyHitstop(this, 100);
+      applyScreenshake(this, 6, 150);
+      playImpactEffect(this, player.x, player.y, 0xff9900, 14);
       endGame(this);
       hazardOn = false;
     }
   });
   this.physics.add.overlap(player, enemiesGroup, (p, e) => {
     if (!gameOver) {
+      applyHitstop(this, 90);
+      applyScreenshake(this, 5, 130);
+      playImpactEffect(this, player.x, player.y, 0xff2222, 12);
       endGame(this);
     }
   });
@@ -1315,7 +1335,7 @@ function update(_time, _delta) {
     // Charge audio sweep
     if (isCharging) updateChargeAudio(this);
 
-    // Land detection: reset ammo/combo
+    // Land detection: reset ammo/combo with enhanced effects
     const onGround = player.body.blocked.down;
     if (onGround && !wasOnGround) {
       if (ammo > maxAmmo || comboCount > 0) {
@@ -1325,18 +1345,57 @@ function update(_time, _delta) {
       }
       ammo = maxAmmo;
       if (this.ammoText) { this.ammoText.setText('Ammo: ' + ammo); this.ammoText.setColor('#ffff00'); }
-      playTone(this, 440, 0.05);
-
-      player.setFillStyle(0x00ffff);
-      this.tweens.add({ targets: player, duration: 200, onComplete: () => player.setFillStyle(0xffffff) });
-      for (let i = 0; i < 4; i++) {
-        const px = player.x + (Math.random() - 0.5) * 20;
-        const particle = this.add.rectangle(px, player.y + 12, 3, 3, 0x00aaff);
+      
+      // Improved landing feedback
+      playTone(this, 440, 0.08);
+      
+      // Squash & stretch effect
+      player.setScale(1.15, 0.85); // Squash on impact
+      this.tweens.add({
+        targets: player,
+        scaleX: 1,
+        scaleY: 1,
+        duration: 150,
+        ease: 'Back.easeOut'
+      });
+      
+      // Color flash
+      player.setFillStyle(0x00ffff, 1);
+      this.time.delayedCall(200, () => {
+        if (player && player.active) player.setFillStyle(0xffffff, 1);
+      });
+      
+      // Enhanced landing particles (more and varied)
+      for (let i = 0; i < 8; i++) {
+        const px = player.x + (Math.random() - 0.5) * 25;
+        const size = 3 + Math.random() * 2;
+        const particle = this.add.rectangle(px, player.y + 12, size, size, 0x00aaff);
         this.physics.add.existing(particle);
-        particle.body.setVelocity((Math.random() - 0.5) * 100, -Math.random() * 80);
-        particle.body.setGravity(0, 400);
-        this.tweens.add({ targets: particle, alpha: 0, duration: 400, onComplete: () => particle.destroy() });
+        const angle = Math.PI + (Math.random() - 0.5) * Math.PI * 0.6; // Spread upward
+        const speed = 80 + Math.random() * 60;
+        particle.body.setVelocity(Math.cos(angle) * speed, Math.sin(angle) * speed);
+        particle.body.setGravity(0, 500);
+        this.tweens.add({ 
+          targets: particle, 
+          alpha: 0, 
+          scale: 0.5,
+          duration: 350 + Math.random() * 150, 
+          onComplete: () => particle.destroy() 
+        });
       }
+      
+      // Ground impact wave (subtle)
+      const wave = this.add.ellipse(player.x, player.y + 13, 20, 4, 0x00aaff, 0.4);
+      wave.setDepth(player.depth - 1);
+      this.tweens.add({
+        targets: wave,
+        scaleX: 2.5,
+        scaleY: 1.5,
+        alpha: 0,
+        duration: 300,
+        ease: 'Cubic.easeOut',
+        onComplete: () => wave.destroy()
+      });
     }
     wasOnGround = onGround;
   }
@@ -2190,6 +2249,7 @@ function onBulletHitsEnemy(scene, bullet, enemy) {
     // Preserve properties needed after destroy
     const wasShielded = !!enemy.shielded;
     const ex = enemy.x; const ey = enemy.y;
+    
     // death particles
     for (let i = 0; i < 8; i++) {
       const angle = (i / 8) * Math.PI * 2;
@@ -2537,6 +2597,61 @@ function playTone(scene, frequency, duration) {
 
   oscillator.start(audioContext.currentTime);
   oscillator.stop(audioContext.currentTime + duration);
+}
+
+// ====== HITSTOP & SCREENSHAKE ======
+function applyHitstop(scene, duration = 80) {
+  if (!scene || !scene.physics || !scene.physics.world) return;
+  
+  hitstopActive = true;
+  hitstopEndTime = scene.time.now + duration;
+  
+  // Pause physics briefly
+  const originalTimeScale = scene.physics.world.timeScale;
+  scene.physics.world.timeScale = 0;
+  
+  scene.time.delayedCall(duration, () => {
+    if (scene.physics && scene.physics.world) {
+      scene.physics.world.timeScale = originalTimeScale;
+    }
+    hitstopActive = false;
+  });
+}
+
+function applyScreenshake(scene, intensity = 3, duration = 100) {
+  if (!scene || !scene.cameras || !scene.cameras.main) return;
+  
+  const camera = scene.cameras.main;
+  camera.shake(duration, intensity / 1000); // Phaser expects intensity as decimal
+}
+
+function playImpactEffect(scene, x, y, color = 0xff0000, particleCount = 8) {
+  if (!scene || gameOver) return;
+  
+  for (let i = 0; i < particleCount; i++) {
+    const angle = (i / particleCount) * Math.PI * 2;
+    const speed = 100 + Math.random() * 100;
+    const size = 3 + Math.random() * 3;
+    
+    const particle = scene.add.rectangle(x, y, size, size, color);
+    scene.physics.add.existing(particle);
+    particle.body.setVelocity(
+      Math.cos(angle) * speed,
+      Math.sin(angle) * speed
+    );
+    particle.body.setGravity(0, 300);
+    
+    scene.tweens.add({
+      targets: particle,
+      alpha: 0,
+      scale: 0.3,
+      duration: 300 + Math.random() * 200,
+      onComplete: () => particle.destroy()
+    });
+  }
+  
+  // Impact sound
+  playTone(scene, 150 + Math.random() * 100, 0.08);
 }
 
 // ====== BACKGROUND MUSIC ======
