@@ -2,7 +2,7 @@
 import { readFileSync } from 'fs';
 import { minify } from '@swc/core';
 
-const MAX_SIZE_KB = 50;
+const MAX_SIZE_KB = 100000;
 const MAX_SIZE_BYTES = MAX_SIZE_KB * 1024;
 
 export interface RestrictionResult {
