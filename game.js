@@ -917,6 +917,20 @@ let comboCount = 0;
 let comboMultiplier = 1;
 let comboText;
 
+// Milestones tracking (para evitar repetidos)
+let milestoneDepth = 500; // Siguiente milestone de profundidad
+let milestoneScore = 1000; // Siguiente milestone de score
+let highestComboReached = 0; // Máximo combo alcanzado
+
+// Multi-kill tracking
+let multiKillCount = 0; // Enemigos matados en la ventana actual
+let multiKillTimer = 0; // Timestamp del último kill
+const MULTIKILL_WINDOW = 1000; // Ventana de 1 segundo para multi-kills
+
+// Milestone display management
+let activeMilestones = []; // Array de milestones actualmente visibles
+let milestoneDepthCounter = 10000; // Depth counter para z-index
+
 // String constants
 const FONT = 'Arial, sans-serif';
 const C_BLACK = '#000000';
@@ -1029,6 +1043,17 @@ function create(data) {
   // Reset hitstop state
   hitstopActive = false;
   hitstopEndTime = 0;
+  
+  // Reset milestones
+  milestoneDepth = 1000;
+  milestoneScore = 1000;
+  highestComboReached = 0;
+  activeMilestones = [];
+  milestoneDepthCounter = 10000;
+  
+  // Reset multi-kill tracking
+  multiKillCount = 0;
+  multiKillTimer = 0;
 
   // Clear runtime arrays
   platforms = [];
@@ -1405,6 +1430,16 @@ function update(_time, _delta) {
   cam.scrollY = Math.max(cam.scrollY, player.y - 260);
   ensureWorldCapacity(this, cam.scrollY + 1000);
   seedPlatforms(this, cam.scrollY + 100, cam.scrollY + 800);
+  
+  // Track depth and check milestones
+  const currentDepth = Math.floor(player.y - 150);
+  if (currentDepth > maxDepth) {
+    maxDepth = currentDepth;
+    while (maxDepth >= milestoneDepth) {
+      showMilestone(this, `${milestoneDepth}m DEPTH!`, '#00ffff');
+      milestoneDepth = Math.round(milestoneDepth * 1.5); // Next milestone
+    }
+  }
   for (let i = 0; i < platforms.length; i++) {
     const p = platforms[i];
     if (p.y < cam.scrollY - 60) {
@@ -1676,12 +1711,17 @@ function goToMenu(scene) {
 }
 
 function showGameOverScreen(scene) {
+  // Collect all visual elements for fade in
+  const allElements = [];
+  
   // Dark overlay with radial gradient effect
   const overlay = scene.add.graphics();
   overlay.fillStyle(0x000000, 0.88);
   overlay.fillRect(0, 0, 800, 600);
   overlay.setDepth(9999);
   overlay.setScrollFactor(0);
+  overlay.setAlpha(0); // Start invisible for fade in
+  allElements.push(overlay);
 
   // Add subtle scan lines for retro effect
   const scanLines = scene.add.graphics();
@@ -1690,6 +1730,8 @@ function showGameOverScreen(scene) {
     scanLines.fillRect(0, i, 800, 2);
   }
   scanLines.setDepth(9999).setScrollFactor(0);
+  scanLines.setAlpha(0);
+  allElements.push(scanLines);
 
   // Animated particles burst
   for (let i = 0; i < 20; i++) {
@@ -1697,6 +1739,8 @@ function showGameOverScreen(scene) {
     const py = 300 + (Math.random() - 0.5) * 400;
     const particle = scene.add.rectangle(px, py, 3, 3, 0xff0000, 0.8);
     particle.setDepth(9998).setScrollFactor(0);
+    particle.setAlpha(0);
+    allElements.push(particle);
     scene.tweens.add({
       targets: particle,
       alpha: 0,
@@ -1715,7 +1759,8 @@ function showGameOverScreen(scene) {
     color: '#ffffff',
     stroke: '#00ffff',
     strokeThickness: 5
-  }).setOrigin(0.5).setDepth(10000).setScrollFactor(0);
+  }).setOrigin(0.5).setDepth(10000).setScrollFactor(0).setAlpha(0);
+  allElements.push(titleText);
   scene.tweens.add({ 
     targets: titleText, 
     scale: { from: 1, to: 1.05 }, 
@@ -1737,7 +1782,8 @@ function showGameOverScreen(scene) {
     align: 'center',
     stroke: '#ff6666',
     strokeThickness: 12
-  }).setOrigin(0.5).setDepth(9999).setScrollFactor(0).setAlpha(0.3);
+  }).setOrigin(0.5).setDepth(9999).setScrollFactor(0).setAlpha(0);
+  allElements.push(gameOverGlow);
   scene.tweens.add({ 
     targets: gameOverGlow, 
     scale: { from: 1.1, to: 1.2 }, 
@@ -1755,7 +1801,8 @@ function showGameOverScreen(scene) {
     align: 'center',
     stroke: '#990000',
     strokeThickness: 8
-  }).setOrigin(0.5).setDepth(10000).setScrollFactor(0);
+  }).setOrigin(0.5).setDepth(10000).setScrollFactor(0).setAlpha(0);
+  allElements.push(gameOverText);
   scene.tweens.add({ 
     targets: gameOverText, 
     scale: { from: 1, to: 1.08 }, 
@@ -1768,7 +1815,8 @@ function showGameOverScreen(scene) {
   // Score panel with border
   const scorePanelBg = scene.add.rectangle(cx, cy + 90, 400, 70, 0x0a0a1a, 0.85);
   scorePanelBg.setStrokeStyle(3, 0x00ffff, 0.6);
-  scorePanelBg.setDepth(10000).setScrollFactor(0);
+  scorePanelBg.setDepth(10000).setScrollFactor(0).setAlpha(0);
+  allElements.push(scorePanelBg);
 
   const finalScoreLabel = scene.add.text(cx, cy + 75, 'FINAL SCORE', {
     fontSize: '18px', 
@@ -1776,7 +1824,8 @@ function showGameOverScreen(scene) {
     color: '#aaaaaa', 
     stroke: '#000000', 
     strokeThickness: 2
-  }).setOrigin(0.5).setDepth(10001).setScrollFactor(0);
+  }).setOrigin(0.5).setDepth(10001).setScrollFactor(0).setAlpha(0);
+  allElements.push(finalScoreLabel);
 
   const finalScoreText = scene.add.text(cx, cy + 100, score.toString(), {
     fontSize: '42px', 
@@ -1784,7 +1833,8 @@ function showGameOverScreen(scene) {
     color: '#00ffff', 
     stroke: '#004444', 
     strokeThickness: 5
-  }).setOrigin(0.5).setDepth(10001).setScrollFactor(0);
+  }).setOrigin(0.5).setDepth(10001).setScrollFactor(0).setAlpha(0);
+  allElements.push(finalScoreText);
   scene.tweens.add({
     targets: finalScoreText,
     scale: { from: 0.95, to: 1.05 },
@@ -1801,7 +1851,8 @@ function showGameOverScreen(scene) {
     color: '#ffff00', 
     stroke: '#000000', 
     strokeThickness: 3
-  }).setOrigin(0.5).setDepth(10001).setScrollFactor(0);
+  }).setOrigin(0.5).setDepth(10001).setScrollFactor(0).setAlpha(0);
+  allElements.push(instructText);
   scene.tweens.add({ 
     targets: instructText, 
     alpha: { from: 0.6, to: 1 }, 
@@ -1815,10 +1866,12 @@ function showGameOverScreen(scene) {
   const retryY = cy + 220;
   const retryBorder = scene.add.rectangle(cx, retryY, 280, 60, 0x001a1a, 0.7);
   retryBorder.setStrokeStyle(3, 0x00ff00, 0.9);
-  retryBorder.setDepth(10000).setScrollFactor(0);
+  retryBorder.setDepth(10000).setScrollFactor(0).setAlpha(0);
+  allElements.push(retryBorder);
   
   const retryGlow = scene.add.rectangle(cx, retryY, 280, 60, 0x00ff00, 0.1);
-  retryGlow.setDepth(9999).setScrollFactor(0);
+  retryGlow.setDepth(9999).setScrollFactor(0).setAlpha(0);
+  allElements.push(retryGlow);
   scene.tweens.add({
     targets: retryGlow,
     alpha: { from: 0.1, to: 0.25 },
@@ -1835,16 +1888,19 @@ function showGameOverScreen(scene) {
     color: '#00ff00', 
     stroke: '#003300', 
     strokeThickness: 4
-  }).setOrigin(0.5).setDepth(10001).setScrollFactor(0);
+  }).setOrigin(0.5).setDepth(10001).setScrollFactor(0).setAlpha(0);
+  allElements.push(retryBtn);
 
   // Main Menu button
   const menuY = cy + 300;
   const menuBorder = scene.add.rectangle(cx, menuY, 280, 60, 0x001a1a, 0.7);
   menuBorder.setStrokeStyle(3, 0x00ffff, 0.9);
-  menuBorder.setDepth(10000).setScrollFactor(0);
+  menuBorder.setDepth(10000).setScrollFactor(0).setAlpha(0);
+  allElements.push(menuBorder);
   
   const menuGlow = scene.add.rectangle(cx, menuY, 280, 60, 0x00ffff, 0.1);
-  menuGlow.setDepth(9999).setScrollFactor(0);
+  menuGlow.setDepth(9999).setScrollFactor(0).setAlpha(0);
+  allElements.push(menuGlow);
 
   const menuBtn = scene.add.text(cx, menuY, '⌂ MAIN MENU', {
     fontSize: '32px', 
@@ -1852,7 +1908,8 @@ function showGameOverScreen(scene) {
     color: '#00ffff', 
     stroke: '#003333', 
     strokeThickness: 4
-  }).setOrigin(0.5).setDepth(10001).setScrollFactor(0);
+  }).setOrigin(0.5).setDepth(10001).setScrollFactor(0).setAlpha(0);
+  allElements.push(menuBtn);
 
   // Store elements for navigation
   gameOverItems = [retryBtn, menuBtn];
@@ -1905,6 +1962,21 @@ function showGameOverScreen(scene) {
   };
 
   updateGameOverVisuals();
+  
+  // Smooth fade in for all elements (300ms)
+  scene.tweens.add({
+    targets: allElements,
+    alpha: { from: 0, to: 1 },
+    duration: 300,
+    ease: 'Quad.easeOut',
+    onComplete: () => {
+      // After fade in, restore proper alpha values for special elements
+      gameOverGlow.setAlpha(0.3); // Was 0, now visible with glow effect
+      retryGlow.setAlpha(0.1); // Will pulse via its tween
+      menuGlow.setAlpha(0.1); // Will pulse via its tween
+      // Particles will fade naturally via their own tweens
+    }
+  });
 
   // Mouse interactions
   retryBtn.setInteractive({ useHandCursor: true });
@@ -2259,6 +2331,36 @@ function onBulletHitsEnemy(scene, bullet, enemy) {
       particle.body.setGravity(0, 300);
       scene.tweens.add({ targets: particle, alpha: 0, scale: 0, duration: 500, onComplete: () => particle.destroy() });
     }
+    
+    // Multi-kill detection
+    const now = scene.time.now;
+    if (now - multiKillTimer <= MULTIKILL_WINDOW) {
+      multiKillCount++;
+    } else {
+      multiKillCount = 1;
+    }
+    multiKillTimer = now;
+    
+    // Show multi-kill milestone
+    if (multiKillCount >= 2) {
+      const multiKillMessages = [
+        null, // 0 kills
+        null, // 1 kill (no message)
+        { text: 'DOUBLE KILL!', color: '#00ff00' },
+        { text: 'TRIPLE KILL!', color: '#ffaa00' },
+        { text: 'QUAD KILL!', color: '#ff4400' },
+        { text: 'PENTA KILL!', color: '#ff00ff' },
+        { text: 'MEGA KILL!', color: '#ff0000' }
+      ];
+      
+      const killMsg = multiKillCount <= 6 
+        ? multiKillMessages[multiKillCount]
+        : { text: 'UNSTOPPABLE!', color: '#ffffff' };
+      
+      if (killMsg) {
+        showMilestone(scene, killMsg.text, killMsg.color);
+      }
+    }
 
     const p = enemy.platformRef;
     if (p && p.enemies) p.enemies = p.enemies.filter(x => x !== enemy);
@@ -2312,8 +2414,15 @@ function onBulletHitsEnemy(scene, bullet, enemy) {
 
       if (scene.ammoText) {
         scene.ammoText.setText('Ammo: ' + ammo);
-        scene.ammoText.setColor(textColor);
-        scene.tweens.add({ targets: scene.ammoText, scale: { from: 1, to: 1.3 }, duration: 150, yoyo: true, ease: 'Quad.easeOut' });
+        pulseHudElement(scene, scene.ammoText, textColor, 1.25, 150);
+      }
+      
+      // Check combo milestones
+      if (comboCount > highestComboReached) {
+        highestComboReached = comboCount;
+        if (comboCount === 5) showMilestone(scene, '5 COMBO!', '#ff4400');
+        else if (comboCount === 10) showMilestone(scene, '10 COMBO!', '#ff00ff');
+        else if (comboCount === 15) showMilestone(scene, '15 COMBO! UNSTOPPABLE!', '#ffff00');
       }
     } else {
       // Grounded kill (no combo gain)
@@ -2327,11 +2436,23 @@ function onBulletHitsEnemy(scene, bullet, enemy) {
       }).setOrigin(0.5);
       scene.tweens.add({ targets: t, y: t.y - 20, alpha: 0, duration: 500, onComplete: () => t.destroy() });
 
-      if (scene.ammoText) { scene.ammoText.setText('Ammo: ' + ammo); scene.ammoText.setColor('#ffff00'); }
+      if (scene.ammoText) {
+        scene.ammoText.setText('Ammo: ' + ammo);
+        pulseHudElement(scene, scene.ammoText, '#ffff00', 1.15, 120);
+      }
       playTone(scene, 660, 0.08);
     }
 
-    if (scoreText) scoreText.setText('Score: ' + score);
+    if (scoreText) {
+      scoreText.setText('Score: ' + score);
+      pulseHudElement(scene, scoreText, '#00ff00', 1.2, 150);
+    }
+    
+    // Check score milestones
+    while (score >= milestoneScore) {
+      showMilestone(scene, `${milestoneScore} POINTS!`, '#00ff00');
+      milestoneScore += 1000; // Next milestone
+    }
     enemy.destroy();
 
     // Guaranteed Jetpack drop for shielded enemies, unless player already has jetpack
@@ -2652,6 +2773,160 @@ function playImpactEffect(scene, x, y, color = 0xff0000, particleCount = 8) {
   
   // Impact sound
   playTone(scene, 150 + Math.random() * 100, 0.08);
+}
+
+// ====== FEEDBACK POSITIVO Y TRANSICIONES ======
+// Componente reutilizable para texto flotante
+function spawnFloatingText(scene, x, y, text, options = {}) {
+  if (!scene || gameOver) return;
+  
+  const defaults = {
+    fontSize: '20px',
+    color: '#ffffff',
+    strokeThickness: 3,
+    duration: 700,
+    yOffset: -40,
+    startScale: 0.5,
+    endScale: 1.2,
+    ease: 'Back.easeOut'
+  };
+  
+  const opts = { ...defaults, ...options };
+  
+  const floatingText = scene.add.text(x, y, text, {
+    fontSize: opts.fontSize,
+    fontFamily: FONT,
+    color: opts.color,
+    stroke: C_BLACK,
+    strokeThickness: opts.strokeThickness
+  }).setOrigin(0.5);
+  
+  scene.tweens.add({
+    targets: floatingText,
+    y: y + opts.yOffset,
+    scale: { from: opts.startScale, to: opts.endScale },
+    alpha: { from: 1, to: 0 },
+    duration: opts.duration,
+    ease: opts.ease,
+    onComplete: () => floatingText.destroy()
+  });
+  
+  return floatingText;
+}
+
+// Pulso visual en elementos del HUD
+function pulseHudElement(scene, element, color = null, scaleFactor = 1.15, duration = 150) {
+  if (!scene || !element) return;
+  
+  // Kill existing tweens to avoid stacking
+  scene.tweens.killTweensOf(element);
+  
+  // Color flash if provided
+  if (color) {
+    const originalColor = element.style.color;
+    element.setColor(color);
+    scene.time.delayedCall(duration, () => {
+      if (element && element.setColor) element.setColor(originalColor);
+    });
+  }
+  
+  // Scale pulse
+  scene.tweens.add({
+    targets: element,
+    scale: { from: 1, to: scaleFactor },
+    duration: duration / 2,
+    yoyo: true,
+    ease: 'Quad.easeOut'
+  });
+}
+
+// Pop-up de milestone (no intrusivo)
+function showMilestone(scene, message, color = '#ffff00') {
+  if (!scene || gameOver) return;
+  
+  // Empujar milestones existentes hacia arriba
+  activeMilestones.forEach((existingMilestone) => {
+    if (existingMilestone && existingMilestone.active) {
+      scene.tweens.add({
+        targets: existingMilestone,
+        y: existingMilestone.y - 50, // Desplazar 50px arriba
+        duration: 200,
+        ease: 'Quad.easeOut'
+      });
+    }
+  });
+  
+  // Incrementar depth counter para que el más nuevo esté siempre encima
+  milestoneDepthCounter++;
+  
+  const milestone = scene.add.text(400, 150, message, {
+    fontSize: '32px',
+    fontFamily: FONT,
+    color: color,
+    stroke: C_BLACK,
+    strokeThickness: 4
+  }).setOrigin(0.5).setScrollFactor(0).setDepth(milestoneDepthCounter);
+  
+  // Añadir al array de activos
+  activeMilestones.push(milestone);
+  
+  // Audio feedback
+  playTone(scene, 880, 0.12);
+  
+  // Bounce in, hold, fade out
+  scene.tweens.add({
+    targets: milestone,
+    scale: { from: 0, to: 1.2 },
+    duration: 250,
+    ease: 'Back.easeOut',
+    onComplete: () => {
+      scene.time.delayedCall(800, () => {
+        scene.tweens.add({
+          targets: milestone,
+          alpha: 0,
+          scale: 0.8,
+          duration: 300,
+          ease: 'Quad.easeIn',
+          onComplete: () => {
+            // Remover del array cuando se destruye
+            activeMilestones = activeMilestones.filter(m => m !== milestone);
+            milestone.destroy();
+          }
+        });
+      });
+    }
+  });
+  
+  return milestone;
+}
+
+// Fade in para overlays
+function fadeInOverlay(scene, container, duration = 250, onComplete = null) {
+  if (!scene || !container) return;
+  
+  container.setAlpha(0);
+  scene.tweens.add({
+    targets: container,
+    alpha: 1,
+    duration: duration,
+    ease: 'Quad.easeOut',
+    onComplete: onComplete
+  });
+}
+
+// Fade out para overlays
+function fadeOutOverlay(scene, container, duration = 250, onComplete = null) {
+  if (!scene || !container) return;
+  
+  scene.tweens.add({
+    targets: container,
+    alpha: 0,
+    duration: duration,
+    ease: 'Quad.easeIn',
+    onComplete: () => {
+      if (onComplete) onComplete();
+    }
+  });
 }
 
 // ====== BACKGROUND MUSIC ======
