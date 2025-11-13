@@ -667,7 +667,7 @@ function buildModeSelectOverlay(s) {
     fontSize: '28px', fontFamily: 'Arial, sans-serif', color: '#00ffff', stroke: '#000000', strokeThickness: 2
   }).setOrigin(0.5);
 
-  const nDesc = s.add.text(250, 250, 'Ammo refills to MAX on any kill by bullet.', {
+  const nDesc = s.add.text(250, 250, 'You only loose when taking damage.', {
     fontSize: '16px', fontFamily: 'Arial, sans-serif', color: '#dddddd', align: 'center', wordWrap: { width: 260 }
   }).setOrigin(0.5);
 
@@ -691,7 +691,7 @@ function buildModeSelectOverlay(s) {
   }).setOrigin(0.5);
 
   const cDesc = s.add.text(550, 250,
-    'Gain +1 ammo on any kill by bullet.',
+    'Istantly loose after landing on any platfrom while in combo mode.',
     {
       fontSize: '16px', fontFamily: 'Arial, sans-serif', color: '#dddddd', align: 'center', wordWrap: { width: 260 }
     }).setOrigin(0.5);
@@ -1003,7 +1003,13 @@ function create(data) {
   seedPlatforms(this, 220, this.cameras.main.scrollY + 800);
 
   // Colliders & overlaps
-  this.physics.add.collider(player, platformsGroup);
+  this.physics.add.collider(player, platformsGroup, () => {
+    // Challenger mode: LANDING on platform while in combo = death
+    // Only triggers when touching from above (blocked.down = standing on platform)
+    if (selectedMode === 'challenger' && comboCount > 0 && !gameOver && player.body.blocked.down) {
+      endGame(this);
+    }
+  });
   this.physics.add.collider(bulletsGroup, platformsGroup, (b, _p) => { if (b && b.destroy) b.destroy(); });
   this.physics.add.overlap(bulletsGroup, enemiesGroup, (b, e) => onBulletHitsEnemy(this, b, e));
   this.physics.add.overlap(enemyBulletsGroup, player, (b, _p) => {
@@ -2164,12 +2170,8 @@ function onBulletHitsEnemy(scene, bullet, enemy) {
       const pitchMultiplier = 1 + (comboCount * 0.1);
       playTone(scene, 660 * pitchMultiplier, 0.08);
 
-      // === Ammo rules diverge by mode ===
-      if (selectedMode === 'normal') {
-        ammo = maxAmmo; // ONLY difference in Normal mode
-      } else {
-        ammo = wasComboZero ? maxAmmo : (ammo + 1);
-      }
+      // === Ammo rules: both modes refill on airborne kill ===
+      ammo = maxAmmo;
 
       if (scene.ammoText) {
         scene.ammoText.setText('Ammo: ' + ammo);
@@ -2180,12 +2182,8 @@ function onBulletHitsEnemy(scene, bullet, enemy) {
       // Grounded kill (no combo gain)
       score += earnedScore;
 
-      // Ammo rules
-      if (selectedMode === 'normal') {
-        ammo = maxAmmo; // refill on ANY bullet kill
-      } else {
-        ammo = Math.min(maxAmmo, ammo + 1);
-      }
+      // Ammo rules: both modes refill on grounded kill
+      ammo = maxAmmo;
 
       const t = scene.add.text(enemy.x, enemy.y - 10, '+' + baseScore, {
         fontSize: '16px', fontFamily: FONT, color: '#ffdd55', stroke: C_BLACK, strokeThickness: 2
